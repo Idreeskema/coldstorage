@@ -1,0 +1,18 @@
+/* Requests feature styles (prefix: rq-) */
+.rq-flow { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 16px; }
+.rq-flow span { font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 11px; background: var(--surface-2); color: var(--faint); }
+.rq-flow span.done { background: var(--accent-soft); color: #3d6b1c; }
+.rq-flow span.now { background: var(--primary); color: #fff; }
+.rq-cap { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.rq-cap div { background: var(--surface-2); border-radius: 8px; padding: 10px 12px; }
+.rq-cap small { display: block; color: var(--muted); font-size: 12px; }
+.rq-cap b { font-size: 20px; font-variant-numeric: tabular-nums; }
+.rq-cap .bad b { color: var(--red); }
+.rq-alloc { border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 14px; margin-top: 14px; }
+.rq-alloc-nums { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 12px 0; }
+.rq-alloc-nums small { display: block; color: var(--muted); font-size: 11.5px; }
+.rq-alloc-nums b { font-size: 16px; font-variant-numeric: tabular-nums; }
+@media (max-width: 560px) {
+  .rq-cap { grid-template-columns: 1fr; }
+  .rq-alloc-nums { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

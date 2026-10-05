@@ -1,0 +1,19 @@
+.pay-section { margin-top: 20px; }
+.pay-sub { font-size: 12px; margin-top: 1px; }
+.pay-due { color: var(--red); }
+.pay-actions { justify-content: flex-end; flex-wrap: nowrap; gap: 6px; }
+.pay-chip-filter { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px 0 12px; border-radius: 14px; background: var(--primary-soft); color: var(--primary); font-size: 12.5px; }
+.pay-chip-filter button { display: grid; place-items: center; width: 20px; height: 20px; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
+.pay-chip-filter button:hover { background: rgba(31, 77, 54, 0.12); }
+.pay-chip-filter svg { width: 13px; height: 13px; }
+.pay-outstanding { display: flex; align-items: center; gap: 12px; padding: 10px 13px; border-radius: var(--radius-sm); background: var(--surface-2); flex-wrap: wrap; }
+.pay-outstanding b { font-size: 18px; }
+.pay-outstanding .link { margin-left: auto; background: none; border: 0; font: inherit; font-weight: 550; }
+
+.ledg-picker { min-width: 260px; }
+.ledg-summary { margin-bottom: 20px; }
+.ledg-layout { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 16px; align-items: start; margin-top: 20px; }
+@media (max-width: 1100px) { .ledg-layout { grid-template-columns: 1fr; } }
+.ledg-desc { max-width: 380px; }
+.ledg-credit { color: var(--primary); }
+.ledg-lot-total { font-weight: 650; }

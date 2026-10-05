@@ -1,0 +1,37 @@
+/* Growers feature styles (prefix: gr-) */
+.gr-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.gr-name b { font-weight: 600; }
+.gr-hero { display: flex; gap: 18px; align-items: center; padding: 18px; flex-wrap: wrap; }
+.gr-hero-main { flex: 1; min-width: 240px; }
+.gr-hero h2 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+.gr-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 6px; color: var(--muted); font-size: 13px; }
+.gr-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 20px; }
+.gr-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+.gr-stats .kpi-value { font-size: 22px; }
+@media (max-width: 1000px) { .gr-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 420px) { .gr-stats .kpi-value { font-size: 19px; } .gr-stats .kpi { padding: 12px 13px; } }
+
+.gr-alloc { padding: 16px 18px; border-bottom: 1px solid var(--border); }
+.gr-alloc:last-child { border-bottom: 0; }
+.gr-alloc-nums { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 14px 0; }
+.gr-alloc-nums div { background: var(--surface-2); border-radius: 8px; padding: 9px 11px; }
+.gr-alloc-nums small { display: block; color: var(--muted); font-size: 11.5px; }
+.gr-alloc-nums b { font-size: 17px; font-variant-numeric: tabular-nums; }
+@media (max-width: 700px) { .gr-alloc-nums { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.gr-steps { display: flex; margin: 4px 0 0; }
+.gr-step { flex: 1; text-align: center; position: relative; font-size: 12px; color: var(--faint); min-width: 0; }
+.gr-step::before { content: ''; position: absolute; top: 10px; left: -50%; width: 100%; height: 2px; background: var(--border-strong); }
+.gr-step:first-child::before { display: none; }
+.gr-step i { position: relative; display: grid; place-items: center; width: 22px; height: 22px; margin: 0 auto 6px; border-radius: 50%; background: var(--surface); border: 2px solid var(--border-strong); font-style: normal; font-size: 11px; font-weight: 700; z-index: 1; }
+.gr-step.done { color: var(--text); }
+.gr-step.done::before { background: var(--accent); }
+.gr-step.done i { background: var(--accent); border-color: var(--accent); color: #fff; }
+.gr-step.now i { border-color: var(--primary); color: var(--primary); }
+.gr-step b { display: block; font-weight: 600; }
+.gr-step span { display: block; font-variant-numeric: tabular-nums; color: var(--muted); }
+.gr-sec { padding: 14px 18px 6px; font-weight: 650; font-size: 13px; }
+.gr-doc-list { display: flex; flex-direction: column; }
+.gr-doc { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 18px; border-bottom: 1px solid var(--border); }
+.gr-doc:last-child { border-bottom: 0; }
+.gr-doc svg { width: 16px; height: 16px; color: var(--faint); }

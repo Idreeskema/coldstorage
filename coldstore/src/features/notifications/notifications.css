@@ -1,0 +1,25 @@
+.ntf-page { max-width: 860px; }
+.ntf-groups { gap: 22px; }
+.ntf-group { font-size: 12px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+.ntf-list { overflow: hidden; }
+.ntf-item { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border); padding-right: 10px; }
+.ntf-item:last-child { border-bottom: 0; }
+.ntf-item.unread { background: #fbfdf7; }
+.ntf-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 13px 8px 13px 16px; border: 0; background: none; text-align: left; font: inherit; color: inherit; cursor: default; }
+.ntf-item.link .ntf-main { cursor: pointer; }
+.ntf-item.link:hover { background: #fcfbf8; }
+.ntf-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: transparent; }
+.ntf-item.unread .ntf-dot { background: var(--accent); }
+.ntf-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ntf-title { font-size: 14px; font-weight: 500; }
+.ntf-item.unread .ntf-title { font-weight: 650; }
+.ntf-text { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.ntf-time { font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ntf-go { width: 16px; height: 16px; color: var(--faint); flex: none; }
+@media (max-width: 640px) {
+  .ntf-item { flex-wrap: wrap; padding-right: 12px; padding-bottom: 6px; }
+  .ntf-main { flex-basis: 100%; flex-wrap: wrap; padding-right: 8px; }
+  .ntf-time { order: 3; padding-left: 20px; }
+  .ntf-go { display: none; }
+  .ntf-item > .btn { margin-left: 20px; margin-bottom: 6px; }
+}

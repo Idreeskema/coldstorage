@@ -1,0 +1,12 @@
+.dsp-section { margin-top: 24px; }
+.dsp-h { font-size: 15px; font-weight: 650; margin-bottom: 12px; }
+.dsp-sm { font-size: 12.5px; }
+.dsp-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+.dsp-card { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+.dsp-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; background: var(--surface-2); border-radius: var(--radius-sm); padding: 10px 12px; }
+.dsp-stats span { display: block; font-size: 11.5px; color: var(--muted); }
+.dsp-stats b { font-size: 18px; letter-spacing: -0.01em; }
+.dsp-bad { color: var(--red); }
+.dsp-btns { justify-content: flex-end; }
+.dsp-flow i { font-style: normal; color: var(--faint); margin: 0 4px; }
+@media (max-width: 640px) { .dsp-cards { grid-template-columns: 1fr; } .dsp-btns .btn { flex: 1; } }

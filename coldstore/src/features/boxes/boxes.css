@@ -1,0 +1,29 @@
+.box-concepts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; }
+.box-concept { padding: 16px 18px; border-right: 1px solid var(--border); position: relative; }
+.box-concept:last-child { border-right: 0; }
+.box-concept .tag { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.box-concept .val { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin-top: 4px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.box-concept .def { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.box-concept::before { content: ''; position: absolute; left: 0; top: 0; right: 0; height: 3px; background: var(--c, var(--border-strong)); }
+.box-concept.c1 { --c: #8aa398; }
+.box-concept.c2 { --c: var(--blue); }
+.box-concept.c3 { --c: var(--accent); }
+.box-concept.c4 { --c: var(--primary); }
+.box-derived { display: flex; flex-wrap: wrap; gap: 8px 28px; padding: 12px 18px; border-top: 1px solid var(--border); background: #fcfbf8; font-size: 13px; color: var(--muted); border-radius: 0 0 var(--radius) var(--radius); }
+.box-derived b { color: var(--text); font-variant-numeric: tabular-nums; }
+.box-derived .warn b { color: var(--amber); }
+.box-progress { min-width: 110px; }
+.box-progress small { display: block; color: var(--muted); font-size: 11.5px; margin-top: 3px; }
+.box-sub { display: block; color: var(--muted); font-size: 12px; }
+.box-remain { background: var(--surface-2); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 13px; display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.box-remain b { font-variant-numeric: tabular-nums; }
+@media (max-width: 1100px) {
+  .box-concepts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .box-concept:nth-child(2) { border-right: 0; }
+  .box-concept:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
+}
+@media (max-width: 520px) {
+  .box-concepts { grid-template-columns: 1fr; }
+  .box-concept { border-right: 0; border-bottom: 1px solid var(--border); }
+  .box-concept:last-child { border-bottom: 0; }
+}
