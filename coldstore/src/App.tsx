@@ -20,6 +20,9 @@ import PaymentsPage from './features/payments/PaymentsPage'
 import LedgerPage from './features/payments/LedgerPage'
 import ReportsPage from './features/reports/ReportsPage'
 import NotificationsPage from './features/notifications/NotificationsPage'
+import TradeLedgerPage from './features/trade/TradeLedgerPage'
+import CustomerDashboardPage from './features/trade/CustomerDashboardPage'
+import ImportExportPage from './features/trade/ImportExportPage'
 import SettingsPage from './features/settings/SettingsPage'
 import GrowerHomePage from './features/grower-app/GrowerHomePage'
 import GrowerStoragePage from './features/grower-app/GrowerStoragePage'
@@ -55,6 +58,9 @@ export default function App() {
         <Route path="payments" element={<PaymentsPage />} />
         <Route path="ledger" element={<LedgerPage />} />
         <Route path="ledger/:growerId" element={<LedgerPage />} />
+        <Route path="trade" element={<TradeLedgerPage />} />
+        <Route path="customers" element={<CustomerDashboardPage />} />
+        <Route path="import" element={<Guard roles={['MANAGER']}><ImportExportPage /></Guard>} />
         <Route path="chambers" element={<ChambersPage />} />
         <Route path="chambers/:chamberId" element={<ChambersPage />} />
         <Route path="reports" element={<ReportsPage />} />

@@ -3,9 +3,10 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Box, FileText, IndianRupee, Plus, Apple, BookOpen, Phone, MapPin } from 'lucide-react'
 import { useDerived, useStore } from '../../core/store'
 import { buildLedger, requestStatusLabel } from '../../core/calc'
-import { fmtDate, fmtDateShort, fmtTime, inr, num } from '../../core/format'
+import { fmtDate, fmtDateShort, fmtTime, inr, num, rateLabel } from '../../core/format'
+import type { Allocation, RateType } from '../../core/types'
 import {
-  Avatar, Button, Card, DocPreview, EmptyState, Kpi, PageHeader, QrCode, StatusPill, TableWrap, Tabs, Timeline, toast,
+  Alert, Avatar, Button, Card, DocPreview, EmptyState, Field, Input, Kpi, Modal, PageHeader, QrCode, Select, StatusPill, TableWrap, Tabs, Timeline, toast,
   type DocSpec,
 } from '../../ui'
 import './growers.css'
@@ -25,6 +26,11 @@ export default function GrowerDetailPage() {
   const approveGrower = useStore((s) => s.approveGrower)
   const [tab, setTab] = useState<Tab>('overview')
   const [doc, setDoc] = useState<DocSpec | null>(null)
+  const isManager = useStore((s) => s.session?.role === 'MANAGER')
+  const updateAllocation = useStore((s) => s.updateAllocation)
+  const [rateAlloc, setRateAlloc] = useState<Allocation | null>(null)
+  const [rf, setRf] = useState({ type: 'PER_MONTH' as RateType, rate: '', ref: '', remarks: '', applyLots: true })
+  const [rfErr, setRfErr] = useState('')
 
   const g = state.growers.find((x) => x.id === id)
   const s = d.growerStats.get(id)
@@ -48,6 +54,21 @@ export default function GrowerDetailPage() {
     )
   }
 
+  const openRate = (a: Allocation) => {
+    setRateAlloc(a); setRfErr('')
+    setRf({ type: a.rateType, rate: String(a.rate), ref: a.externalRef ?? '', remarks: a.remarks ?? '', applyLots: true })
+  }
+  const saveRate = () => {
+    if (!rateAlloc) return
+    const rate = Number(rf.rate)
+    if (rf.rate.trim() === '' || !(rate >= 0)) return setRfErr('Enter a valid rate')
+    const res = updateAllocation(rateAlloc.id, {
+      rateType: rf.type, rate, externalRef: rf.ref.trim() || undefined, remarks: rf.remarks.trim() || undefined,
+    }, rf.applyLots)
+    if (!res.ok) return setRfErr(res.error ?? 'Could not update the agreement')
+    toast(`Rate updated · ${rateLabel(rf.type, rate)}`)
+    setRateAlloc(null)
+  }
   const allocCode = (aid: string) => state.allocations.find((a) => a.id === aid)?.code ?? '—'
   const lotCode = (lid: string) => d.lotById.get(lid)?.code ?? '—'
   const firstAlloc = allocs.find((a) => d.allocStats.get(a.id)!.remainingToIssue > 0) ?? allocs[0]
@@ -76,13 +97,14 @@ export default function GrowerDetailPage() {
   const statementDoc = (): DocSpec => ({
     title: 'Storage Statement', code: `STMT-${g.code}`, date: fmtDate(new Date().toISOString()),
     rows: [['Grower', g.name], ['Boxes received', num(s.received)], ['Dispatched', num(s.dispatched)], ['Current storage', num(s.stored)],
-      ['Total charges', inr(s.charges)], ['Paid', inr(s.paid)], ['Balance due', inr(s.due)]],
+      ['Total charges', inr(s.charges)], ['Paid', inr(s.paid)], s.due < -1 ? ['Advance held', inr(-s.due)] : ['Balance due', inr(Math.max(0, s.due))]],
   })
 
   const stats: [string, string, string?][] = [
     ['Allocation', num(s.allocated), 'boxes'], ['Boxes issued', num(s.issued), `${num(s.awaitingReturn)} awaiting return`],
     ['Apples received', num(s.received)], ['Current storage', num(s.stored), `${s.activeLots} active lots`],
-    ['Dispatched', num(s.dispatched)], ['Total charges', inr(s.charges)], ['Paid', inr(s.paid)], ['Due', inr(Math.max(0, s.due))],
+    ['Dispatched', num(s.dispatched)], ['Total charges', inr(s.charges)], ['Paid', inr(s.paid)],
+    s.due < -1 ? ['Advance held', inr(-s.due), 'Paid in excess of charges'] : ['Due', inr(Math.max(0, s.due))],
   ]
 
   const stepper = (allocated: number, issued: number, received: number, stored: number, dispatched: number) => {
@@ -154,7 +176,17 @@ export default function GrowerDetailPage() {
               return (
                 <div key={a.id} className="gr-alloc">
                   <div className="row spread wrap">
-                    <div><span className="mono strong">{a.code}</span> <span className="muted">· {a.durationMonths} months</span></div>
+                    <div>
+                      <span className="mono strong">{a.code}</span>
+                      {a.externalRef && <span className="muted"> · Txn {a.externalRef}</span>}
+                      <span className="muted"> · {a.durationMonths} months</span>
+                      <div className="gr-rate">
+                        <b>{rateLabel(a.rateType, a.rate)}</b>
+                        {!(a.rate > 0) && <span className="pill amber">Rate missing</span>}
+                        {isManager && <button type="button" className="link" onClick={() => openRate(a)}>Edit rate</button>}
+                      </div>
+                      {a.remarks && <div className="muted" style={{ fontSize: 12.5 }}>{a.remarks}</div>}
+                    </div>
                     <div className="row"><StatusPill status={st.status} />
                       {st.remainingToIssue > 0 && <Button size="sm" onClick={() => nav(`/admin/boxes?${q(`&allocation=${a.id}`)}`)}>Issue boxes</Button>}</div>
                   </div>
@@ -186,14 +218,14 @@ export default function GrowerDetailPage() {
           {lots.length === 0 ? <EmptyState title="No storage lots" text="Lots are created when apples are received." /> : (
             <TableWrap>
               <thead><tr><th>Lot</th><th>Variety</th><th className="r">Received</th><th className="r">Current</th><th className="r">Days</th>
-                <th className="r">Accrued</th><th>Location</th><th>Status</th></tr></thead>
+                <th>Rate</th><th className="r">Accrued</th><th>Location</th><th>Status</th></tr></thead>
               <tbody>
                 {lots.map((l) => (
                   <tr key={l.id} className="click" onClick={() => nav(`/admin/inventory/${l.id}`)}>
                     <td className="mono"><Link className="link" to={`/admin/inventory/${l.id}`}>{l.code}</Link></td>
                     <td>{l.variety} · {l.grade}</td>
                     <td className="r num">{num(l.boxesReceived)}</td><td className="r num strong">{num(l.current)}</td>
-                    <td className="r num">{l.days}</td><td className="r num">{inr(l.accrued)}</td>
+                    <td className="r num">{l.days}</td><td className="muted">{rateLabel(l.rateType, l.rate)}</td><td className="r num">{inr(l.accrued)}</td>
                     <td>{l.chamberId} · {l.rackLabel}</td><td><StatusPill status={l.status} /></td>
                   </tr>
                 ))}
@@ -281,7 +313,7 @@ export default function GrowerDetailPage() {
                 {ledger.map((r) => (
                   <tr key={r.id}><td>{fmtDate(r.date)}</td><td>{r.description}</td>
                     <td className="r num">{r.debit ? inr(r.debit) : ''}</td><td className="r num">{r.credit ? inr(r.credit) : ''}</td>
-                    <td className="r num strong">{inr(r.balance)}</td></tr>
+                    <td className={`r num strong ${r.balance < -0.5 ? 'gr-adv' : ''}`}>{r.balance < -0.5 ? `Advance ${inr(-r.balance)}` : inr(r.balance)}</td></tr>
                 ))}
               </tbody>
             </TableWrap>
@@ -307,6 +339,28 @@ export default function GrowerDetailPage() {
           </div>
         </Card>
       )}
+
+      <Modal open={!!rateAlloc} onClose={() => setRateAlloc(null)} title={rateAlloc ? `Edit agreement rate · ${rateAlloc.code}` : ''}
+        footer={<><Button onClick={() => setRateAlloc(null)}>Cancel</Button><Button variant="primary" onClick={saveRate}>Save rate</Button></>}>
+        <div className="form-grid">
+          <Field label="Billing basis">
+            <Select value={rf.type} onChange={(e) => setRf({ ...rf, type: e.target.value as RateType })}>
+              <option value="PER_CRATE">Per crate, flat</option>
+              <option value="PER_DAY">Per box / day</option>
+              <option value="PER_MONTH">Per box / month</option>
+              <option value="PER_SEASON">Per box / season</option>
+            </Select>
+          </Field>
+          <Field label="Rate (₹)"><Input type="number" min={0} step="0.01" value={rf.rate} onChange={(e) => setRf({ ...rf, rate: e.target.value })} /></Field>
+          <Field label="Transaction ID (optional)"><Input value={rf.ref} onChange={(e) => setRf({ ...rf, ref: e.target.value })} /></Field>
+          <Field label="Remarks (optional)"><Input value={rf.remarks} onChange={(e) => setRf({ ...rf, remarks: e.target.value })} /></Field>
+          <label className="set-check full" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 13.5 }}>
+            <input type="checkbox" checked={rf.applyLots} onChange={(e) => setRf({ ...rf, applyLots: e.target.checked })} />
+            <span>Apply to existing lots <span className="muted">({rateAlloc ? lots.filter((l) => l.allocationId === rateAlloc.id).length : 0} lots). Off: only lots received from now on use the new rate.</span></span>
+          </label>
+          {rfErr && <div className="full"><Alert kind="error">{rfErr}</Alert></div>}
+        </div>
+      </Modal>
 
       <DocPreview open={!!doc} onClose={() => setDoc(null)} doc={doc} />
     </div>

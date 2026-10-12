@@ -4,7 +4,7 @@ import { FileText } from 'lucide-react'
 import { useStore } from '../../core/store'
 import { fmtDate, fmtTime, relativeDay } from '../../core/format'
 import { DocPreview, EmptyState, Tabs, Timeline, type DocSpec } from '../../ui'
-import { boxIssueDoc, receiptDoc, useMe } from './shared'
+import { boxIssueDoc, movementLine, receiptDoc, useMe } from './shared'
 
 type Tab = 'activity' | 'notifications' | 'receipts'
 
@@ -23,6 +23,18 @@ export default function GrowerTransactionsPage() {
   const tab: Tab = raw === 'notifications' || raw === 'receipts' ? raw : 'activity'
   const setTab = (t: Tab) => setSp(t === 'activity' ? {} : { tab: t }, { replace: true })
 
+  /** pickup / driver / destination for box-issue and receipt activities */
+  const detail = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const b of boxIssues) m.set(b.id, movementLine([b.fromLocation && `From ${b.fromLocation}`, b.driver && `Driver ${b.driver}`, b.vehicle]))
+    for (const r of receipts) m.set(r.lotId, movementLine([r.sourceLocation && `From ${r.sourceLocation}`, r.destination && `To ${r.destination}`, r.driver && `Driver ${r.driver}`, r.vehicle]))
+    return m
+  }, [boxIssues, receipts])
+  const descOf = (a: { entityId: string; entityType: string; description: string }) => {
+    const x = a.entityType === 'boxIssue' || a.entityType === 'lot' ? detail.get(a.entityId) : undefined
+    return x ? ` - ` : a.description
+  }
+
   const mine = useMemo(() => activities.filter((a) => a.growerId === gid), [activities, gid])
   const groups = useMemo(() => {
     const m = new Map<string, typeof mine>()
@@ -38,11 +50,11 @@ export default function GrowerTransactionsPage() {
   const docs = useMemo(() => {
     const name = grower?.name ?? ''
     const a = receipts.filter((r) => r.growerId === gid).map((r) => ({
-      id: r.id, date: r.receivedDate, title: 'Apple receipt', code: r.code, sub: `${r.boxes.toLocaleString('en-IN')} boxes · ${r.variety}`,
+      id: r.id, date: r.receivedDate, title: 'Apple receipt', code: r.code, sub: `${r.boxes.toLocaleString('en-IN')} crates · ${r.variety}`,
       doc: () => receiptDoc(r, dv.lotById.get(r.lotId), name),
     }))
     const b = boxIssues.filter((x) => x.growerId === gid).map((x) => ({
-      id: x.id, date: x.date, title: 'Box issue receipt', code: x.code, sub: `${x.quantity.toLocaleString('en-IN')} ${x.boxType.toLowerCase()} boxes`,
+      id: x.id, date: x.date, title: 'Crate issue receipt', code: x.code, sub: `${x.quantity.toLocaleString('en-IN')} ${x.boxType.toLowerCase()} crates`,
       doc: () => boxIssueDoc(x, allocations.find((al) => al.id === x.allocationId), name),
     }))
     return [...a, ...b].sort((p, q) => q.date.localeCompare(p.date))
@@ -64,7 +76,7 @@ export default function GrowerTransactionsPage() {
           <div key={day}>
             <div className="ga-day">{day}</div>
             <div className="ga-card">
-              <Timeline items={items.map((a) => ({ id: a.id, title: a.title, desc: a.description, tone: a.status, time: fmtTime(a.timestamp) }))} />
+              <Timeline items={items.map((a) => ({ id: a.id, title: a.title, desc: descOf(a), tone: a.status, time: fmtTime(a.timestamp) }))} />
             </div>
           </div>
         ))
@@ -90,7 +102,7 @@ export default function GrowerTransactionsPage() {
       ))}
 
       {tab === 'receipts' && (docs.length === 0 ? (
-        <EmptyState title="No receipts yet" text="Box issue and apple receipts are listed here." />
+        <EmptyState title="No receipts yet" text="Crate issue and apple receipts are listed here." />
       ) : (
         <div className="ga-list">
           {docs.map((d) => (

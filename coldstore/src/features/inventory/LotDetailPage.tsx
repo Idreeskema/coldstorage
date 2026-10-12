@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ArrowRight, Printer, Truck } from 'lucide-react'
 import {
-  Alert, Button, Card, DocPreview, EmptyState, Field, Input, Modal, PageHeader, Progress, QrCode,
+  Alert, Button, Card, DocPreview, EmptyState, Field, Input, Modal, PageHeader, Progress, QrCode, Select,
   StatusPill, TableWrap, Textarea, Timeline, toast, type DocSpec, type TimelineItem,
 } from '../../ui'
 import { useDerived, useStore } from '../../core/store'
@@ -17,6 +17,11 @@ export default function LotDetailPage() {
   const receipts = useStore((s) => s.receipts)
   const allocations = useStore((s) => s.allocations)
   const requestDispatch = useStore((s) => s.requestDispatch)
+  const assignLotChamber = useStore((s) => s.assignLotChamber)
+  const [asgOpen, setAsgOpen] = useState(false)
+  const [asgChamber, setAsgChamber] = useState('')
+  const [asgRack, setAsgRack] = useState('1')
+  const [asgError, setAsgError] = useState('')
 
   const lot = d.lotById.get(lotId)
   const [reqOpen, setReqOpen] = useState(false)
@@ -48,11 +53,26 @@ export default function LotDetailPage() {
   const gs = d.growerStats.get(lot.growerId)
   const free = lot.current - lot.pendingDispatch
   const done = lotDispatches.filter((x) => x.status === 'COMPLETED')
-  const chamberLabel = `${lot.chamberId} · ${lot.rackLabel}`
+  const placed = d.store.chambers.some((c) => c.chamber.id === lot.chamberId)
+  const chamberLabel = placed ? `${lot.chamberId} · ${lot.rackLabel}` : 'Unassigned'
+  const flat = lot.rateType === 'PER_CRATE'
 
   const wDays = wiDays ?? String(lot.days), wRate = wiRate ?? String(lot.rate), wBoxes = wiBoxes ?? String(lot.boxesReceived)
   const whatIf = estimateCharge(Number(wBoxes) || 0, Number(wDays) || 0, lot.rateType, Number(wRate) || 0)
-  const unit = lot.rateType === 'PER_DAY' ? 'per day' : lot.rateType === 'PER_MONTH' ? 'per month' : 'per season'
+  const rateUnit = rateLabel(lot.rateType, 0).replace(/^₹0 \/ /, '')
+  const noDays = lot.rateType === 'PER_CRATE' || lot.rateType === 'PER_SEASON'
+
+  const asgStat = d.store.chambers.find((c) => c.chamber.id === asgChamber)
+  const submitAssign = () => {
+    setAsgError('')
+    const rk = Number(asgRack)
+    if (asgChamber && (!Number.isInteger(rk) || rk < 1 || (asgStat && rk > asgStat.chamber.racks)))
+      return setAsgError(`Starting rack must be between 1 and ${asgStat?.chamber.racks ?? 1}`)
+    const res = assignLotChamber(lot.id, asgChamber || undefined, asgChamber ? rk : undefined)
+    if (!res.ok) { setAsgError(res.error ?? 'Could not assign'); toast(res.error ?? 'Could not assign', 'error'); return }
+    toast(`${lot.code} placed in a chamber`)
+    setAsgOpen(false)
+  }
 
   const submitDispatch = () => {
     setError('')
@@ -110,13 +130,14 @@ export default function LotDetailPage() {
       <PageHeader title="" crumbs={[{ label: 'Inventory', to: '/admin/inventory' }, { label: lot.code }]} />
       <div className="lot-head" style={{ marginTop: -44 }}>
         <div>
-          <h1><span className="mono" style={{ fontSize: 'inherit' }}>{lot.code}</span><StatusPill status={lot.status} /></h1>
+          <h1><span className="mono" style={{ fontSize: 'inherit' }}>{lot.code}</span><StatusPill status={lot.status} />{!placed && <StatusPill status="UNASSIGNED" label="Unassigned" tone="amber" />}</h1>
           <div className="muted" style={{ marginTop: 4 }}>
             <Link className="link" to={`/admin/growers/${lot.growerId}`}>{lot.growerName}</Link> · {lot.growerCode} · {lot.variety}, Grade {lot.grade}
           </div>
         </div>
         <div className="row wrap">
           <div className="qrbox"><QrCode value={lot.code} size={64} /></div>
+          {!placed && lot.current > 0 && <Button onClick={() => { setAsgError(''); setAsgChamber(''); setAsgRack('1'); setAsgOpen(true) }}>Assign chamber</Button>}
           <Button icon={<Printer />} onClick={() => setDoc(lotDoc())}>Print lot receipt</Button>
           <Button variant="primary" icon={<Truck />} disabled={free <= 0} onClick={() => { setError(''); setQty(String(free)); setReqOpen(true) }}>Request dispatch</Button>
         </div>
@@ -179,8 +200,10 @@ export default function LotDetailPage() {
           <Card title="Charge breakdown" sub="Charges to date for this lot">
             <table className="lot-charge">
               <tbody>
-                <tr><td>Base storage charge</td><td>{inr(lot.accrued)}</td></tr>
-                <tr><td className="muted">Days stored</td><td>{lot.days}</td></tr>
+                <tr><td>{flat ? 'Flat crate charge' : 'Base storage charge'}</td><td>{inr(lot.accrued)}</td></tr>
+                {flat
+                  ? <tr><td className="muted">Basis</td><td>{num(lot.boxesReceived)} crates × ₹{lot.rate} (flat, no days)</td></tr>
+                  : <tr><td className="muted">Days stored</td><td>{lot.days}</td></tr>}
                 <tr><td className="muted">Rate</td><td>{rateLabel(lot.rateType, lot.rate)}</td></tr>
                 <tr><td>Other charges</td><td>₹0</td></tr>
                 <tr><td>Discount</td><td>₹0</td></tr>
@@ -198,11 +221,11 @@ export default function LotDetailPage() {
               <h4>What-if calculator</h4>
               <div className="grid cols-3">
                 <Field label="Boxes"><Input className="sm" type="number" min={0} value={wBoxes} onChange={(e) => setWiBoxes(e.target.value)} /></Field>
-                <Field label="Days"><Input className="sm" type="number" min={0} value={wDays} onChange={(e) => setWiDays(e.target.value)} /></Field>
-                <Field label={`Rate (₹ ${unit})`}><Input className="sm" type="number" min={0} step="0.1" value={wRate} onChange={(e) => setWiRate(e.target.value)} /></Field>
+                {!noDays && <Field label="Days"><Input className="sm" type="number" min={0} value={wDays} onChange={(e) => setWiDays(e.target.value)} /></Field>}
+                <Field label={`Rate (₹ / ${rateUnit})`}><Input className="sm" type="number" min={0} step="0.1" value={wRate} onChange={(e) => setWiRate(e.target.value)} /></Field>
               </div>
               <div className="out">
-                <span className="muted">Estimated charge</span>
+                <span className="muted">{flat ? 'Estimated flat charge (crates × rate)' : 'Estimated charge'}</span>
                 <b>{inr(whatIf)}</b>
               </div>
               {(wiDays !== null || wiRate !== null || wiBoxes !== null) && (
@@ -220,6 +243,22 @@ export default function LotDetailPage() {
           <Field label="Boxes to dispatch" full><Input type="number" min={1} max={free} value={qty} onChange={(e) => setQty(e.target.value)} /></Field>
           <Field label="Notes (optional)" full><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
           {error && <div className="full"><Alert kind="error">{error}</Alert></div>}
+        </div>
+      </Modal>
+      <Modal open={asgOpen} onClose={() => setAsgOpen(false)} title={`Assign chamber · ${lot.code}`}
+        footer={<><Button onClick={() => setAsgOpen(false)}>Cancel</Button><Button variant="primary" onClick={submitAssign}>Assign</Button></>}>
+        <div className="form-grid">
+          <div className="full muted">{num(lot.current)} boxes to place.</div>
+          <Field label="Chamber" hint={asgStat ? `${num(asgStat.available)} boxes free of ${num(asgStat.chamber.capacity)}` : 'Emptiest chamber with room is chosen'}>
+            <Select value={asgChamber} onChange={(e) => setAsgChamber(e.target.value)}>
+              <option value="">Auto-assign (emptiest chamber)</option>
+              {d.store.chambers.map((c) => <option key={c.chamber.id} value={c.chamber.id}>{c.chamber.id} · {num(c.available)} free</option>)}
+            </Select>
+          </Field>
+          <Field label="Starting rack" hint={asgStat ? `Racks 1–${asgStat.chamber.racks}` : 'Set automatically'}>
+            <Input type="number" min={1} max={asgStat?.chamber.racks} disabled={!asgChamber} value={asgRack} onChange={(e) => setAsgRack(e.target.value)} />
+          </Field>
+          {asgError && <div className="full"><Alert kind="error">{asgError}</Alert></div>}
         </div>
       </Modal>
       <DocPreview open={!!doc} onClose={() => setDoc(null)} doc={doc} />

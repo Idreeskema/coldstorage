@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   Apple, Bell, Boxes, ChevronDown, FileBarChart, LayoutDashboard, LogOut, Menu, Package, PackageCheck,
-  Settings, Snowflake, Truck, Users, Wallet, BookOpen, ClipboardList, Warehouse,
+  Settings, Snowflake, Truck, Users, Wallet, BookOpen, ClipboardList, Warehouse, Table2, UserRound, FileSpreadsheet,
 } from 'lucide-react'
 import { useDerived, useStore } from '../core/store'
 import { Avatar, Toaster } from '../ui'
@@ -19,6 +19,9 @@ const NAV: NavItem[] = [
   { to: '/admin/dispatch', label: 'Dispatch / Outward', icon: Truck, count: 'dispatch' },
   { to: '/admin/payments', label: 'Payments', icon: Wallet, managerOnly: true },
   { to: '/admin/ledger', label: 'Grower Ledger', icon: BookOpen, managerOnly: true },
+  { to: '/admin/trade', label: 'Trade Ledger', icon: Table2 },
+  { to: '/admin/customers', label: 'Customers', icon: UserRound },
+  { to: '/admin/import', label: 'Import / Export', icon: FileSpreadsheet, managerOnly: true },
   { to: '/admin/chambers', label: 'Chambers', icon: Snowflake },
   { to: '/admin/reports', label: 'Reports', icon: FileBarChart, managerOnly: true },
   { to: '/admin/notifications', label: 'Notifications', icon: Bell },

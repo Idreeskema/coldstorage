@@ -28,6 +28,8 @@ export default function BoxesPage() {
   const [boxType, setBoxType] = useState<BoxType>('Wooden')
   const [issuedBy, setIssuedBy] = useState(session?.userName ?? '')
   const [vehicle, setVehicle] = useState('')
+  const [fromLocation, setFromLocation] = useState('')
+  const [driver, setDriver] = useState('')
   const [notes, setNotes] = useState('')
   const [error, setError] = useState('')
   const [growerFilter, setGrowerFilter] = useState(params.get('grower') ?? '')
@@ -35,6 +37,7 @@ export default function BoxesPage() {
   const gName = useMemo(() => new Map(growers.map((g) => [g.id, g.name])), [growers])
   const allocById = useMemo(() => new Map(allocations.map((a) => [a.id, a])), [allocations])
   const s = d.store
+  const pickupPoints = useStore((x) => x.settings.locations.pickupPoints)
 
   const openForm = (gid = '', aid = '') => {
     setGrowerId(gid)
@@ -42,6 +45,8 @@ export default function BoxesPage() {
     setQty('')
     setNotes('')
     setVehicle('')
+    setFromLocation('')
+    setDriver('')
     setDate(today())
     setError('')
     setFormOpen(true)
@@ -80,6 +85,8 @@ export default function BoxesPage() {
         ['Boxes issued', num(i.quantity)],
         ['Box type', i.boxType],
         ['Issued by', i.issuedBy],
+        ['Pickup / from', i.fromLocation || '—'],
+        ['Driver', i.driver || '—'],
         ['Vehicle', i.vehicle || '—'],
         ['Notes', i.notes || '—'],
       ],
@@ -94,7 +101,7 @@ export default function BoxesPage() {
     if (!allocationId) return setError('Select an allocation')
     if (!Number.isInteger(q) || q <= 0) return setError('Enter a whole number of boxes')
     if (!issuedBy.trim()) return setError('Enter who is issuing the boxes')
-    const res = issueBoxes({ allocationId, quantity: q, date, boxType, issuedBy: issuedBy.trim(), vehicle: vehicle.trim() || undefined, notes: notes.trim() || undefined })
+    const res = issueBoxes({ allocationId, quantity: q, date, boxType, issuedBy: issuedBy.trim(), vehicle: vehicle.trim() || undefined, fromLocation: fromLocation.trim() || undefined, driver: driver.trim() || undefined, notes: notes.trim() || undefined })
     if (!res.ok) {
       setError(res.error ?? 'Could not issue boxes')
       toast(res.error ?? 'Could not issue boxes', 'error')
@@ -114,7 +121,7 @@ export default function BoxesPage() {
   return (
     <div className="page">
       <PageHeader
-        title="Box Management"
+        title="Crates & Boxes"
         sub="Allocation reserves space. Issuing hands out empty boxes. Apples come back in those boxes and are stored."
         actions={<Button variant="primary" icon={<PackagePlus />} onClick={() => openForm(growerFilter)}>Issue boxes</Button>}
       />
@@ -205,7 +212,7 @@ export default function BoxesPage() {
         ) : (
           <TableWrap>
             <thead>
-              <tr><th>Receipt</th><th>Date</th><th>Grower</th><th>Allocation</th><th className="r">Boxes</th><th>Type</th><th>Issued by</th><th>Vehicle</th><th /></tr>
+              <tr><th>Receipt</th><th>Date</th><th>Grower</th><th>Allocation</th><th className="r">Boxes</th><th>Type</th><th>Issued by</th><th>From</th><th>Driver</th><th>Vehicle</th><th /></tr>
             </thead>
             <tbody>
               {history.map((b) => (
@@ -217,6 +224,8 @@ export default function BoxesPage() {
                   <td className="r num">{num(b.quantity)}</td>
                   <td>{b.boxType}</td>
                   <td>{b.issuedBy}</td>
+                  <td>{b.fromLocation || '—'}</td>
+                  <td>{b.driver || '—'}</td>
                   <td>{b.vehicle || '—'}</td>
                   <td className="r"><Button size="sm" variant="ghost" icon={<Eye />} onClick={() => setDoc(issueDoc(b))}>Receipt</Button></td>
                 </tr>
@@ -267,6 +276,11 @@ export default function BoxesPage() {
             </Select>
           </Field>
           <Field label="Issued by"><Input value={issuedBy} onChange={(e) => setIssuedBy(e.target.value)} /></Field>
+          <Field label="Pickup / from location" hint="Pick from the list or type a new one">
+            <Input list="box-pickup-points" value={fromLocation} onChange={(e) => setFromLocation(e.target.value)} placeholder="e.g. Al Rehman" />
+            <datalist id="box-pickup-points">{pickupPoints.map((p) => <option key={p} value={p} />)}</datalist>
+          </Field>
+          <Field label="Driver (optional)"><Input value={driver} onChange={(e) => setDriver(e.target.value)} /></Field>
           <Field label="Vehicle (optional)" full><Input value={vehicle} onChange={(e) => setVehicle(e.target.value)} placeholder="JK01 AB 1234" /></Field>
           <Field label="Notes (optional)" full><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
           {error && <div className="full"><Alert kind="error">{error}</Alert></div>}

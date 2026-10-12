@@ -4,7 +4,7 @@ import { Bar, BarChart, CartesianGrid, Cell as PieCell, Pie, PieChart, Responsiv
 import { ChevronDown, Download, FileSpreadsheet, FileText, Printer } from 'lucide-react'
 import { Button, Card, EmptyState, Input, PageHeader, StatusPill, toast } from '../../ui'
 import { useDerived, useStore } from '../../core/store'
-import { fmtDate, fmtDateShort, inr, num, today } from '../../core/format'
+import { fmtDate, fmtDateShort, inr, num, rateLabel, today } from '../../core/format'
 import './reports.css'
 
 /* ---------- report model ---------- */
@@ -30,9 +30,10 @@ const REPORTS: ReportDef[] = [
   { id: 'outward', label: 'Daily Outward', desc: 'Boxes dispatched out of the store each day', dated: true, dateLabel: 'Dispatch date' },
   { id: 'alloc', label: 'Box Allocation', desc: 'Allocations with issue and receipt progress', dated: true, dateLabel: 'Allocation date' },
   { id: 'issue', label: 'Box Issue', desc: 'Empty boxes issued to growers', dated: true, dateLabel: 'Issue date' },
-  { id: 'charges', label: 'Storage Charges', desc: 'Charges accrued per lot to date', dated: true, dateLabel: 'Storage start date' },
+  { id: 'movement', label: 'Crate Movement', desc: 'Crates given to and received from growers, with route, driver and remarks', dated: true, dateLabel: 'Movement date' },
+  { id: 'charges', label: 'Storage Charges', desc: 'Charges accrued per lot to date (per-crate lots are a flat charge)', dated: true, dateLabel: 'Storage start date' },
   { id: 'payments', label: 'Payment Collection', desc: 'Payments received from growers', dated: true, dateLabel: 'Payment date' },
-  { id: 'outstanding', label: 'Outstanding Payments', desc: 'Growers with charges still unpaid', dated: false },
+  { id: 'outstanding', label: 'Outstanding Payments', desc: 'Growers with charges still unpaid, and advances held', dated: false },
   { id: 'chambers', label: 'Chamber Utilization', desc: 'Occupancy, rack fill and holding time per chamber', dated: false },
   { id: 'aging', label: 'Lot Aging', desc: 'Lots in storage grouped by days stored', dated: false },
   { id: 'dispatch', label: 'Dispatch Report', desc: 'All dispatch requests and their outcome', dated: true, dateLabel: 'Request date' },
@@ -256,8 +257,8 @@ export default function ReportsPage() {
 
       case 'charges': {
         const list = d.lots.filter((l) => inRange(l.storageStartDate)).sort((a, b) => b.accrued - a.accrued)
-        const rows: Cell[][] = list.map((l) => [l.code, l.growerName, l.storageStartDate, l.days, l.boxesReceived, l.current,
-          l.rateType === 'PER_SEASON' ? `₹${l.rate} / box / season` : `₹${l.rate} / box / ${l.rateType === 'PER_DAY' ? 'day' : 'month'}`, l.accrued])
+        const rows: Cell[][] = list.map((l) => [l.code, l.growerName, l.storageStartDate, l.rateType === 'PER_CRATE' ? null : l.days, l.boxesReceived, l.current,
+          rateLabel(l.rateType, l.rate), l.accrued])
         return {
           cols: [{ label: 'Lot', kind: 'mono' }, { label: 'Grower' }, { label: 'Storage start', kind: 'date' }, { label: 'Days', kind: 'num' },
             { label: 'Boxes received', kind: 'num' }, { label: 'In storage', kind: 'num' }, { label: 'Rate' }, { label: 'Charges to date', kind: 'inr' }],
@@ -268,6 +269,36 @@ export default function ReportsPage() {
               data={list.slice(0, 10).map((l) => ({ name: l.code.replace('LOT-', ''), charges: Math.round(l.accrued) }))} />
           ) : undefined,
           empty: 'No lots started storage in this date range.',
+        }
+      }
+
+      case 'movement': {
+        type Leg = { date: string; kind: string; ref: string; growerId: string; alloc: string; crates: number; from: string; to: string; driver: string | null; vehicle: string | null; remark: string | null }
+        const legs: Leg[] = [
+          ...boxIssues.filter((b) => inRange(b.date)).map((b): Leg => ({
+            date: b.date, kind: 'Given', ref: b.code, growerId: b.growerId, alloc: allocCode(b.allocationId), crates: b.quantity,
+            from: b.fromLocation || 'Store', to: gn(b.growerId), driver: b.driver ?? null, vehicle: b.vehicle ?? null, remark: b.notes ?? null,
+          })),
+          ...receipts.filter((r) => inRange(r.receivedDate)).map((r): Leg => ({
+            date: r.receivedDate, kind: 'Received', ref: r.code, growerId: r.growerId, alloc: allocCode(r.allocationId), crates: r.boxes,
+            from: r.sourceLocation || gn(r.growerId), to: r.destination || 'Store', driver: r.driver ?? null, vehicle: r.vehicle ?? null,
+            remark: [r.remark, r.notes].filter(Boolean).join(' · ') || null,
+          })),
+        ].sort((a, b) => b.date.localeCompare(a.date) || a.ref.localeCompare(b.ref))
+        const rows: Cell[][] = legs.map((l) => [l.date, l.kind, l.ref, gn(l.growerId), l.alloc, l.crates, l.from, l.to, l.driver, l.vehicle, l.remark])
+        const given = legs.filter((l) => l.kind === 'Given').reduce((s, l) => s + l.crates, 0)
+        const recv = legs.filter((l) => l.kind === 'Received').reduce((s, l) => s + l.crates, 0)
+        return {
+          cols: [{ label: 'Date', kind: 'date' }, { label: 'Movement', kind: 'status' }, { label: 'Ref', kind: 'mono' }, { label: 'Grower' }, { label: 'Agreement', kind: 'mono' },
+            { label: 'Crates', kind: 'num' }, { label: 'From' }, { label: 'To' }, { label: 'Driver' }, { label: 'Vehicle' }, { label: 'Remark' }],
+          rows, totals: ['Total', null, null, null, null, sum(rows, 5), null, null, null, null, null],
+          kpis: [
+            { label: 'Crates given', value: num(given) },
+            { label: 'Crates received', value: num(recv) },
+            { label: 'Difference (given − received)', value: num(given - recv) },
+            { label: 'Movements', value: num(legs.length) },
+          ],
+          empty: 'No crate movements in this date range.',
         }
       }
 
@@ -288,24 +319,26 @@ export default function ReportsPage() {
       }
 
       case 'outstanding': {
-        const list = growers.map((g) => ({ g, s: d.growerStats.get(g.id)! })).filter((x) => x.s && x.s.due > 1).sort((a, b) => b.s.due - a.s.due)
-        const rows: Cell[][] = list.map(({ g, s }) => [g.name, g.code, g.phone, s.charges, s.paid, s.due, s.charges ? (s.due / s.charges) * 100 : 0])
+        const list = growers.map((g) => ({ g, s: d.growerStats.get(g.id)! })).filter((x) => x.s && Math.abs(x.s.due) > 1)
+          .sort((a, b) => b.s.due - a.s.due)
+        const rows: Cell[][] = list.map(({ g, s }) => [g.name, g.code, g.phone, s.charges, s.paid, Math.max(0, s.due), Math.max(0, -s.due), s.due > 1 && s.charges ? (s.due / s.charges) * 100 : 0])
+        const dues = list.filter(({ s }) => s.due > 1)
         return {
           cols: [{ label: 'Grower' }, { label: 'Code', kind: 'mono' }, { label: 'Mobile' }, { label: 'Total charges', kind: 'inr' },
-            { label: 'Paid', kind: 'inr' }, { label: 'Outstanding', kind: 'inr' }, { label: '% unpaid', kind: 'pct' }],
+            { label: 'Paid', kind: 'inr' }, { label: 'Outstanding', kind: 'inr' }, { label: 'Advance held', kind: 'inr' }, { label: '% unpaid', kind: 'pct' }],
           rows, links: list.map(({ g }) => `/admin/ledger/${g.id}`),
-          totals: ['Total', null, null, sum(rows, 3), sum(rows, 4), sum(rows, 5), sum(rows, 3) ? (sum(rows, 5) / sum(rows, 3)) * 100 : 0],
+          totals: ['Total', null, null, sum(rows, 3), sum(rows, 4), sum(rows, 5), sum(rows, 6), null],
           kpis: [
             { label: 'Total charges', value: inr(st.totalCharges) },
             { label: 'Collected', value: inr(st.paid) },
             { label: 'Outstanding', value: inr(st.outstanding) },
-            { label: 'Growers with dues', value: num(st.growersWithDue) },
+            { label: 'Advances held', value: inr(st.advances) },
           ],
-          chart: rows.length > 0 ? (
+          chart: dues.length > 0 ? (
             <BarTrend money xKey="name" yKey="due" color={C.amber}
-              data={list.slice(0, 8).map(({ g, s }) => ({ name: g.name.split(' ')[0], due: Math.round(s.due) }))} />
+              data={dues.slice(0, 8).map(({ g, s }) => ({ name: g.name.split(' ')[0], due: Math.round(s.due) }))} />
           ) : undefined,
-          empty: 'No outstanding payments. Every grower is settled.',
+          empty: 'No outstanding payments or advances. Every grower is settled.',
         }
       }
 

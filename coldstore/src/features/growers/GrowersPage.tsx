@@ -112,7 +112,7 @@ export default function GrowersPage() {
                   <td className="r num">{num(s.issued)}</td>
                   <td className="r num">{num(s.received)}</td>
                   <td className="r num strong">{num(s.stored)}</td>
-                  <td className="r num" style={{ color: s.due > 1 ? 'var(--red)' : undefined }}>{inr(Math.max(0, s.due))}</td>
+                  <td className="r num" style={{ color: s.due > 1 ? 'var(--red)' : s.due < -1 ? 'var(--primary)' : undefined }}>{s.due < -1 ? `Advance ${inr(-s.due)}` : inr(Math.max(0, s.due))}</td>
                   <td><StatusPill status={g.status} /></td>
                   <td className="r" onClick={(e) => e.stopPropagation()}>
                     {g.status === 'PENDING' ? (

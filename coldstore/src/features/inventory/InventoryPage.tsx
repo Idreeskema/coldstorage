@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Boxes, X } from 'lucide-react'
-import { Button, Card, Chips, EmptyState, PageHeader, SearchInput, Select, StatusPill, TableWrap } from '../../ui'
+import { Button, Card, Chips, EmptyState, PageHeader, SearchInput, Select, StatusPill, TableWrap, toast } from '../../ui'
 import { useDerived } from '../../core/store'
 import { useStore } from '../../core/store'
 import { fmtDate, inr, num, rateLabel } from '../../core/format'
@@ -22,6 +22,7 @@ const BUCKETS: AgeBucket[] = ['0-30', '31-60', '61-90', '90+']
 export default function InventoryPage() {
   const d = useDerived()
   const growers = useStore((s) => s.growers)
+  const assignLotChamber = useStore((s) => s.assignLotChamber)
   const nav = useNavigate()
   const [params, setParams] = useSearchParams()
   const [page, setPage] = useState(1)
@@ -46,18 +47,20 @@ export default function InventoryPage() {
   const grades = useMemo(() => [...new Set(d.lots.map((l) => l.grade))].sort(), [d.lots])
   const lotGrowers = useMemo(() => growers.filter((g) => d.lots.some((l) => l.growerId === g.id)), [growers, d.lots])
 
+  const chamberIds = useMemo(() => new Set(d.store.chambers.map((c) => c.chamber.id)), [d.store.chambers])
+
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase()
     return d.lots
       .filter((l) => (status === 'ACTIVE' ? l.status !== 'COMPLETED' : l.status === status))
       .filter((l) => !grower || l.growerId === grower)
-      .filter((l) => !chamber || l.chamberId === chamber)
+      .filter((l) => !chamber || (chamber === 'unassigned' ? !chamberIds.has(l.chamberId) : l.chamberId === chamber))
       .filter((l) => !bucket || l.ageBucket === bucket)
       .filter((l) => !variety || l.variety === variety)
       .filter((l) => !grade || l.grade === grade)
       .filter((l) => !needle || `${l.code} ${l.growerName} ${l.growerCode} ${l.variety}`.toLowerCase().includes(needle))
       .sort((a, b) => b.days - a.days || a.code.localeCompare(b.code))
-  }, [d.lots, status, grower, chamber, bucket, variety, grade, q])
+  }, [d.lots, chamberIds, status, grower, chamber, bucket, variety, grade, q])
 
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const cur = Math.min(page, pages)
@@ -93,6 +96,7 @@ export default function InventoryPage() {
           </Select>
           <Select className="sm" value={chamber} onChange={(e) => set('chamber', e.target.value)} aria-label="Chamber">
             <option value="">All chambers</option>
+            <option value="unassigned">Unassigned</option>
             {d.store.chambers.map((c) => <option key={c.chamber.id} value={c.chamber.id}>{c.chamber.id}</option>)}
           </Select>
           <Select className="sm" value={variety} onChange={(e) => set('variety', e.target.value)} aria-label="Variety">
@@ -128,7 +132,13 @@ export default function InventoryPage() {
                   <td>{l.variety}</td>
                   <td>{l.grade}</td>
                   <td className="r num">{num(l.current)}{l.dispatched > 0 && <span className="inv-sub">of {num(l.boxesReceived)}</span>}</td>
-                  <td>{l.chamberId} · {l.rackLabel}</td>
+                  <td>{chamberIds.has(l.chamberId) ? `${l.chamberId} · ${l.rackLabel}` : <span className="row"><span className="pill amber">Unassigned</span>{l.current > 0 && (
+                    <Button size="sm" variant="ghost" onClick={(e) => {
+                      e.stopPropagation()
+                      const res = assignLotChamber(l.id)
+                      res.ok ? toast(`${l.code} auto-assigned`) : toast(res.error ?? 'Could not assign', 'error')
+                    }}>Assign</Button>
+                  )}</span>}</td>
                   <td>{fmtDate(l.storageStartDate)}</td>
                   <td className="r num">{l.days}</td>
                   <td>{rateLabel(l.rateType, l.rate)}</td>

@@ -24,7 +24,7 @@ export default function GrowerRequestPage() {
 
   const submit = () => {
     const e: Record<string, string> = {}
-    if (!(Number(f.boxes) > 0)) e.boxes = 'Enter the boxes you need'
+    if (!(Number(f.boxes) > 0)) e.boxes = 'Enter the crates you need'
     if (!f.start) e.start = 'Required'
     if (!f.end) e.end = 'Required'
     else if (f.end < f.start) e.end = 'Must be after arrival start'
@@ -57,10 +57,10 @@ export default function GrowerRequestPage() {
         <fieldset disabled={!active} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
           <div className="ga-form">
             <div className="ga-two">
-              <Field label="Boxes required" error={errors.boxes}>
+              <Field label="Crates required" error={errors.boxes}>
                 <Input type="number" inputMode="numeric" min={1} value={f.boxes} onChange={(e) => set('boxes', e.target.value)} />
               </Field>
-              <Field label="Expected apples (boxes)">
+              <Field label="Expected apples (crates)">
                 <Input type="number" inputMode="numeric" min={0} value={f.apples} onChange={(e) => set('apples', e.target.value)} />
               </Field>
             </div>
@@ -95,9 +95,9 @@ export default function GrowerRequestPage() {
               <div className="grow">
                 <b>{r.code}</b>
                 <div className="muted" style={{ fontSize: 12.5 }}>
-                  {num(r.requestedBoxes)} boxes · {r.variety} · {r.durationMonths} mo<br />
+                  {num(r.requestedBoxes)} crates · {r.variety} · {r.durationMonths} mo<br />
                   Arrival {fmtDateShort(r.arrivalStart)} to {fmtDate(r.arrivalEnd)}
-                  {r.allocatedBoxes > 0 && <><br />{num(r.allocatedBoxes)} boxes allocated</>}
+                  {r.allocatedBoxes > 0 && <><br />{num(r.allocatedBoxes)} crates allocated</>}
                 </div>
               </div>
               <StatusPill status={r.status} label={requestStatusLabel[r.status]} />

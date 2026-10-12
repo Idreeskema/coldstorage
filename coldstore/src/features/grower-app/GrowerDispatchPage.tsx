@@ -23,8 +23,8 @@ export default function GrowerDispatchPage() {
   const submit = () => {
     if (!lot) return setErr('Select a lot')
     const q = Number(qty)
-    if (!(q > 0)) return setErr('Enter the number of boxes')
-    if (q > free) return setErr(`Only ${num(free)} boxes are available for dispatch from ${lot.code}`)
+    if (!(q > 0)) return setErr('Enter the number of crates')
+    if (q > free) return setErr(`Only ${num(free)} crates are available for dispatch from ${lot.code}`)
     const res = requestDispatch(gid, lot.id, q, notes.trim() || undefined)
     if (!res.ok) return setErr(res.error ?? 'Could not submit')
     setErr(''); setQty(''); setNotes(''); setLotId('')
@@ -37,16 +37,16 @@ export default function GrowerDispatchPage() {
 
       <div className="ga-card">
         {avail.length === 0 ? (
-          <div className="muted">You have no boxes available for dispatch right now.</div>
+          <div className="muted">You have no crates available for dispatch right now.</div>
         ) : (
           <div className="ga-form">
             <Field label="Lot">
               <Select value={lotId} onChange={(e) => { setLotId(e.target.value); setQty(''); setErr('') }}>
                 <option value="">Select lot…</option>
-                {avail.map((l) => <option key={l.id} value={l.id}>{l.code} · {l.variety} · {num(l.current - l.pendingDispatch)} boxes</option>)}
+                {avail.map((l) => <option key={l.id} value={l.id}>{l.code} · {l.variety} · {num(l.current - l.pendingDispatch)} crates</option>)}
               </Select>
             </Field>
-            <Field label="Boxes to dispatch" error={err}
+            <Field label="Crates to dispatch" error={err}
               hint={lot ? `${num(free)} available${lot.pendingDispatch ? ` (${num(lot.pendingDispatch)} already requested)` : ''}` : undefined}>
               <Input type="number" inputMode="numeric" min={1} max={free || undefined} value={qty} disabled={!lot}
                 onChange={(e) => { setQty(e.target.value); setErr('') }} />
@@ -70,7 +70,7 @@ export default function GrowerDispatchPage() {
             return (
               <div key={d.id} className="ga-card" style={{ gap: 8 }}>
                 <div className="ga-card-head">
-                  <div><b>{d.code}</b><div className="muted" style={{ fontSize: 12.5 }}>{l?.code ?? '—'} · {num(d.quantity)} boxes</div></div>
+                  <div><b>{d.code}</b><div className="muted" style={{ fontSize: 12.5 }}>{l?.code ?? '—'} · {num(d.quantity)} crates</div></div>
                   <StatusPill status={d.status} label={d.status === 'PENDING' ? 'Awaiting store' : undefined} />
                 </div>
                 <div className="muted" style={{ fontSize: 12.5 }}>

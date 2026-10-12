@@ -4,7 +4,7 @@ import { useStore } from '../../core/store'
 import { buildLedger } from '../../core/calc'
 import { fmtDate, inr, today } from '../../core/format'
 import { Button, DocPreview, EmptyState, Field, Input, Modal, toast, type DocSpec } from '../../ui'
-import { paymentDoc, useMe } from './shared'
+import { balanceOf, paymentDoc, useMe } from './shared'
 
 export default function GrowerPaymentsPage() {
   const { gid, grower, stats } = useMe()
@@ -20,7 +20,8 @@ export default function GrowerPaymentsPage() {
     () => state.payments.filter((p) => p.growerId === gid).sort((a, b) => b.date.localeCompare(a.date)),
     [state.payments, gid],
   )
-  const due = Math.max(0, Math.round(stats.due))
+  const bal = balanceOf(stats)
+  const due = bal.due
 
   const openPay = () => { setAmount(due > 0 ? String(due) : ''); setErr(''); setPay(true) }
   const submit = () => {
@@ -42,7 +43,9 @@ export default function GrowerPaymentsPage() {
       <div className="ga-money">
         <div><small>Charges</small><b>{inr(stats.charges)}</b></div>
         <div><small>Paid</small><b>{inr(stats.paid)}</b></div>
-        <div className={due > 0 ? 'due' : 'clear'}><small>Due</small><b>{inr(due)}</b></div>
+        {bal.isCredit
+          ? <div className="clear"><small>Advance/Credit</small><b>{inr(bal.credit)}</b></div>
+          : <div className={due > 0 ? 'due' : 'clear'}><small>Due</small><b>{inr(due)}</b></div>}
       </div>
       <Button variant="primary" size="lg" block onClick={openPay} disabled={due <= 0 && stats.charges <= 0}>
         {due > 0 ? `Make payment · ${inr(due)}` : 'Make payment'}
@@ -61,7 +64,7 @@ export default function GrowerPaymentsPage() {
               </div>
               <div className={`amt ${r.kind === 'PAYMENT' ? 'cr' : ''}`}>
                 {r.kind === 'PAYMENT' ? '−' : '+'}{inr(r.kind === 'PAYMENT' ? r.credit : r.debit)}
-                <small>Bal {inr(r.balance)}</small>
+                <small>{r.balance < -0.5 ? 'Advance/Credit' : 'Bal'} {inr(Math.abs(r.balance))}</small>
               </div>
             </div>
           ))}
@@ -85,7 +88,7 @@ export default function GrowerPaymentsPage() {
       <Modal open={pay} onClose={() => setPay(false)} title="Make payment"
         footer={<><Button size="lg" onClick={() => setPay(false)}>Cancel</Button><Button variant="primary" size="lg" onClick={submit}>Pay with UPI</Button></>}>
         <div className="ga-form">
-          <div className="ga-sheet-total"><span className="muted">Outstanding</span><br /><b>{inr(due)}</b></div>
+          <div className="ga-sheet-total"><span className="muted">{bal.isCredit ? 'Advance/Credit on account' : 'Outstanding'}</span><br /><b>{inr(bal.isCredit ? bal.credit : due)}</b></div>
           <Field label="Amount to pay (₹)" error={err}>
             <Input type="number" inputMode="numeric" min={1} value={amount} onChange={(e) => setAmount(e.target.value)} />
           </Field>

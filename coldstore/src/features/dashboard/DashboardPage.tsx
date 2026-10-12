@@ -121,6 +121,10 @@ export default function DashboardPage() {
       a.push({ id: 'cap', sev: 'critical', title: 'Store capacity almost fully committed', desc: `Only ${num(s.available)} boxes unallocated`, to: '/admin/chambers' })
     if (s.growersWithDue > 0)
       a.push({ id: 'due', sev: 'warning', title: `${s.growersWithDue} grower${s.growersWithDue > 1 ? 's' : ''} with dues`, desc: `${inr(s.outstanding)} outstanding`, to: '/admin/payments?status=due' })
+    if (s.unplacedBoxes > 0)
+      a.push({ id: 'unplaced', sev: 'warning', title: `${num(s.unplacedBoxes)} boxes not placed in a chamber`, desc: 'Stored lots with no chamber assigned', to: '/admin/inventory?chamber=unassigned' })
+    if (s.growersWithAdvance > 0)
+      a.push({ id: 'adv', sev: 'info', title: `${s.growersWithAdvance} grower${s.growersWithAdvance > 1 ? 's' : ''} with advance payments`, desc: `${inr(s.advances)} held in advance`, to: '/admin/payments?status=advance' })
     if (s.awaitingReturn > 0)
       a.push({ id: 'unret', sev: 'warning', title: `${num(s.awaitingReturn)} boxes not yet returned`, desc: 'Issued to growers, apples not received', to: '/admin/boxes' })
     if (s.lotsNearingEnd > 0)
@@ -191,7 +195,7 @@ export default function DashboardPage() {
         <Kpi label="Today's Outward" icon={<ArrowUpFromLine />} value={num(s.todayOutward)} unit="boxes" to="/admin/dispatch?date=today"
           foot={s.pendingDispatches ? `${s.pendingDispatches} request${s.pendingDispatches > 1 ? 's' : ''} pending` : 'Dispatched today'} />
         <Kpi label="Outstanding" icon={<Wallet />} value={inr(s.outstanding)} to="/admin/payments?status=due"
-          foot={`${s.growersWithDue} grower${s.growersWithDue === 1 ? '' : 's'} with dues`} tone={s.outstanding > 0 ? 'bad' : undefined} />
+          foot={`${s.growersWithDue} grower${s.growersWithDue === 1 ? '' : 's'} with dues · Advances held ${inr(s.advances)}`} tone={s.outstanding > 0 ? 'bad' : undefined} />
       </div>
 
       <div className="grid cols-main dash-section">

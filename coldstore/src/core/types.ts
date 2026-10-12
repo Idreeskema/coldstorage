@@ -1,4 +1,4 @@
-// Domain model. Dates are 'YYYY-MM-DD'; timestamps are full ISO strings.
+﻿// Domain model. Dates are 'YYYY-MM-DD'; timestamps are full ISO strings.
 
 export type Role = 'MANAGER' | 'STAFF' | 'GROWER'
 
@@ -57,9 +57,14 @@ export interface Allocation {
   code: string // ALLOC-2026-0034
   requestId: string
   growerId: string
-  boxes: number
+  boxes: number // agreement quantity (crates/boxes)
   durationMonths: number
   createdAt: string
+  /** Billing terms live on the allocation (= one agreement / Excel Transaction ID); new lots inherit them. */
+  rateType: RateType
+  rate: number // ₹ per crate (PER_CRATE) / per box per day|month|season
+  remarks?: string
+  externalRef?: string // Transaction ID from the customer's Excel workbook
 }
 
 export type BoxType = 'Wooden' | 'Carton'
@@ -73,6 +78,8 @@ export interface BoxIssue {
   boxType: BoxType
   issuedBy: string
   vehicle?: string
+  fromLocation?: string // pickup point / where the crates were handed out from (e.g. Al Rehman)
+  driver?: string
   notes?: string
 }
 
@@ -89,13 +96,17 @@ export interface AppleReceipt {
   receivedDate: string
   vehicle?: string
   driver?: string
-  chamberId: string
+  chamberId: string // '' = not placed in any chamber yet (unassigned)
   rackStart: number
   notes?: string
+  destination?: string // storage site received at (e.g. Al Meazan)
+  sourceLocation?: string // pickup point the crates came from
+  remark?: string // variety / weight notes from the movement sheet
   override?: boolean // received more than issued (manager override)
 }
 
-export type RateType = 'PER_DAY' | 'PER_MONTH' | 'PER_SEASON'
+/** PER_CRATE = flat charge of crates received × rate (no time component; dispatches do not reduce it). */
+export type RateType = 'PER_DAY' | 'PER_MONTH' | 'PER_SEASON' | 'PER_CRATE'
 export interface Lot {
   id: string
   code: string // LOT-2026-0042
@@ -107,7 +118,7 @@ export interface Lot {
   grade: string
   storageStartDate: string
   expectedReleaseDate: string
-  chamberId: string
+  chamberId: string // '' = unassigned
   rackStart: number // first rack; boxes overflow into following racks
   rateType: RateType
   rate: number // ₹ per box per day/month, or per box per season
@@ -132,6 +143,7 @@ export interface Payment {
   id: string
   code: string // PAY-2026-00012
   growerId: string
+  allocationId?: string // which agreement the payment belongs to (optional)
   amount: number
   date: string
   method: PayMethod
@@ -159,6 +171,8 @@ export type ActivityType =
   | 'DISPATCH_COMPLETED'
   | 'DISPATCH_REJECTED'
   | 'RATE_CHANGED'
+  | 'CHAMBER_ASSIGNED'
+  | 'DATA_IMPORTED'
 
 export type EntityType =
   | 'grower'
@@ -170,6 +184,7 @@ export type EntityType =
   | 'dispatch'
   | 'payment'
   | 'settings'
+  | 'import'
 
 export interface Activity {
   id: string
@@ -196,13 +211,24 @@ export interface Notification {
   link?: string // app route
 }
 
+export interface Locations {
+  pickupPoints: string[] // where crates are handed out / picked up
+  sites: string[] // storage sites crates are received at
+}
+
+export const defaultLocations = (): Locations => ({
+  pickupPoints: ['Al Rehman', 'Imam Sahib', 'Mashwara', 'Sumbal', 'Dal Wan', 'Own Return'],
+  sites: ['Al Meazan', 'Kongposh', 'Kashmir Fresh CA Storage'],
+})
+
 export interface Settings {
   storeName: string
   season: string
   capacity: number
-  rateType: RateType // applied to NEW lots
+  rateType: RateType // default for NEW allocations (each allocation owns its own rate afterwards)
   rate: number
   currency: string
+  locations: Locations
 }
 
 export interface Result {

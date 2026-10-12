@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Download, FileText, Plus, Printer, Share2 } from 'lucide-react'
 import { Button, Card, DocPreview, EmptyState, Kpi, PageHeader, Select, StatusPill, TableWrap, toast, type DocSpec } from '../../ui'
 import { useDerived, useStore } from '../../core/store'
 import { buildLedger } from '../../core/calc'
-import { fmtDate, inr, num, today } from '../../core/format'
+import { fmtDate, inr, num, rateLabel, today } from '../../core/format'
 import { payStatus } from './PaymentsPage'
 import './payments.css'
 
@@ -17,12 +17,18 @@ export default function LedgerPage() {
 
   const grower = data.growers.find((g) => g.id === growerId)
   const stats = grower ? d.growerStats.get(grower.id) : undefined
-  const rows = useMemo(() => (grower ? buildLedger(data, grower.id) : []), [data, grower])
+  const [sp, setSp] = useSearchParams()
+  const agreements = useMemo(() => data.allocations.filter((a) => a.growerId === growerId), [data.allocations, growerId])
+  const allocParam = sp.get('allocation') ?? ''
+  const allocationId = agreements.some((a) => a.id === allocParam) ? allocParam : ''
+  const selAlloc = agreements.find((a) => a.id === allocationId)
+  const rows = useMemo(() => (grower ? buildLedger(data, grower.id, undefined, allocationId || undefined) : []), [data, grower, allocationId])
+  const money = (n: number) => (n < -0.5 ? `Advance ${inr(-n)}` : inr(n))
   const totals = useMemo(
     () => rows.reduce((t, r) => ({ debit: t.debit + r.debit, credit: t.credit + r.credit }), { debit: 0, credit: 0 }),
     [rows],
   )
-  const lots = useMemo(() => d.lots.filter((l) => l.growerId === growerId), [d.lots, growerId])
+  const lots = useMemo(() => d.lots.filter((l) => l.growerId === growerId && (!allocationId || l.allocationId === allocationId)), [d.lots, growerId, allocationId])
   const balance = totals.debit - totals.credit
 
   const pickable = data.growers.filter((g) => g.status !== 'PENDING' || d.growerStats.get(g.id)?.charges)
@@ -50,7 +56,7 @@ export default function LedgerPage() {
     )
   }
 
-  const st = payStatus(stats.paid, stats.due)
+  const st = payStatus(totals.credit, balance)
   const placeholder = (what: string) => toast(`${what} is a placeholder in this POC`)
 
   const statement: DocSpec = {
@@ -63,7 +69,8 @@ export default function LedgerPage() {
       ['Statement entries', String(rows.length)],
       ['Total charges', inr(totals.debit)],
       ['Total payments', inr(totals.credit)],
-      ['Closing balance', inr(balance)],
+      ...(selAlloc ? [['Agreement', `${selAlloc.externalRef ?? selAlloc.code} · ${rateLabel(selAlloc.rateType, selAlloc.rate)}`] as [string, string]] : []),
+      [balance < -0.5 ? 'Closing balance (advance)' : 'Closing balance', money(balance)],
     ],
     footer: `Statement as of ${fmtDate(today())} — computer generated`,
   }
@@ -75,9 +82,16 @@ export default function LedgerPage() {
       <PageHeader
         crumbs={[{ label: 'Payments', to: '/admin/payments' }, { label: 'Ledger' }]}
         title={grower.name}
-        sub={`${grower.code} · ${grower.village}, ${grower.district}`}
+        sub={`${grower.code} · ${grower.village}, ${grower.district}${selAlloc ? ` · Agreement ${selAlloc.externalRef ?? selAlloc.code}` : ''}`}
         actions={<>
           {picker}
+          {agreements.length > 1 && (
+            <Select className="ledg-picker" value={allocationId} aria-label="Filter by agreement"
+              onChange={(e) => { const n = new URLSearchParams(sp); if (e.target.value) n.set('allocation', e.target.value); else n.delete('allocation'); setSp(n, { replace: true }) }}>
+              <option value="">All agreements</option>
+              {agreements.map((a) => <option key={a.id} value={a.id}>{a.externalRef ?? a.code} · {rateLabel(a.rateType, a.rate)}</option>)}
+            </Select>
+          )}
           <Button icon={<FileText />} onClick={() => setDoc(true)}>Statement</Button>
           <Button icon={<Printer />} onClick={() => setDoc(true)}>Print</Button>
           <Button icon={<Download />} onClick={() => placeholder('PDF download')}>Download PDF</Button>
@@ -89,7 +103,9 @@ export default function LedgerPage() {
       <div className="grid cols-4 ledg-summary">
         <Kpi label="Total charges" value={inr(totals.debit)} foot={`${stats.lots} lot${stats.lots === 1 ? '' : 's'}`} />
         <Kpi label="Total paid" value={inr(totals.credit)} foot={`${rows.filter((r) => r.kind === 'PAYMENT').length} payments`} />
-        <Kpi label="Outstanding" value={inr(Math.max(0, balance))} tone={balance > 0 ? 'bad' : undefined} foot={balance < 0 ? `Credit of ${inr(-balance)}` : undefined} />
+        {balance < -0.5
+          ? <Kpi label="Advance held" value={<span className="pay-adv">{inr(-balance)}</span>} foot="Paid in excess of charges" />
+          : <Kpi label="Outstanding" value={inr(Math.max(0, balance))} tone={balance > 0.5 ? 'bad' : undefined} />}
         <Kpi label="Payment status" value={<StatusPill status={st} />} foot={`${num(stats.stored)} boxes in storage`} />
       </div>
 
@@ -109,7 +125,7 @@ export default function LedgerPage() {
                     <td className="ledg-desc">{r.description}</td>
                     <td className="r num">{r.debit ? inr(r.debit) : '—'}</td>
                     <td className="r num ledg-credit">{r.credit ? inr(r.credit) : '—'}</td>
-                    <td className="r num strong">{inr(r.balance)}</td>
+                    <td className={`r num strong ${r.balance < -0.5 ? 'pay-adv' : ''}`}>{money(r.balance)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -118,7 +134,7 @@ export default function LedgerPage() {
                   <td colSpan={2}>Totals</td>
                   <td className="r num">{inr(totals.debit)}</td>
                   <td className="r num">{inr(totals.credit)}</td>
-                  <td className="r num">{inr(balance)}</td>
+                  <td className={`r num ${balance < -0.5 ? 'pay-adv' : ''}`}>{money(balance)}</td>
                 </tr>
               </tfoot>
             </TableWrap>
@@ -149,8 +165,8 @@ export default function LedgerPage() {
               </tbody>
               <tfoot>
                 <tr><td>Total charges</td><td className="r num">{inr(lotTotal)}</td><td className="r num">{inr(0)}</td><td className="r num">{inr(0)}</td><td className="r num">{inr(lotTotal)}</td></tr>
-                <tr><td colSpan={4}>Paid</td><td className="r num ledg-credit">{inr(stats.paid)}</td></tr>
-                <tr><td colSpan={4}>Outstanding</td><td className={`r num ${stats.due > 0 ? 'pay-due' : ''}`}>{inr(Math.max(0, stats.due))}</td></tr>
+                <tr><td colSpan={4}>Paid</td><td className="r num ledg-credit">{inr(totals.credit)}</td></tr>
+                <tr><td colSpan={4}>{balance < -0.5 ? 'Advance' : 'Outstanding'}</td><td className={`r num ${balance > 0.5 ? 'pay-due' : balance < -0.5 ? 'pay-adv' : ''}`}>{inr(Math.abs(balance))}</td></tr>
               </tfoot>
             </TableWrap>
           )}

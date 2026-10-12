@@ -6,7 +6,8 @@ import {
   TableWrap, Textarea, toast, type DocSpec,
 } from '../../ui'
 import { useDerived, useStore } from '../../core/store'
-import { fmtDate, num, today } from '../../core/format'
+import { estimateCharge } from '../../core/calc'
+import { fmtDate, inr, num, rateLabel, today } from '../../core/format'
 import type { AppleReceipt } from '../../core/types'
 import './receipts.css'
 
@@ -43,6 +44,9 @@ export default function ReceiptsPage() {
   const [chamberId, setChamberId] = useState('')
   const [rack, setRack] = useState('1')
   const [notes, setNotes] = useState('')
+  const [destination, setDestination] = useState('')
+  const [sourceLocation, setSourceLocation] = useState('')
+  const [remark, setRemark] = useState('')
   const [override, setOverride] = useState(false)
   const [error, setError] = useState('')
 
@@ -50,6 +54,7 @@ export default function ReceiptsPage() {
   const allocById = useMemo(() => new Map(allocations.map((a) => [a.id, a])), [allocations])
   const lotById = useMemo(() => new Map(lots.map((l) => [l.id, l])), [lots])
   const chambers = d.store.chambers
+  const locations = useStore((s) => s.settings.locations)
   const chamberStat = chambers.find((c) => c.chamber.id === chamberId)
 
   const openForm = (gid = '', aid = '') => {
@@ -57,12 +62,13 @@ export default function ReceiptsPage() {
     setGrowerId(al ? al.growerId : gid)
     setAllocationId(aid)
     setBoxes(''); setNotes(''); setVehicle(''); setDriver(''); setWeight(''); setRack('1')
+    setSourceLocation(''); setRemark(''); setDestination(locations.sites[0] ?? '')
     setOverride(false); setError(''); setDate(today())
     if (al) {
       const rq = useStore.getState().requests.find((r) => r.id === al.requestId)
       if (rq?.variety && VARIETIES.includes(rq.variety)) setVariety(rq.variety)
     }
-    if (!chamberId) setChamberId(chambers.find((c) => c.available > 0)?.chamber.id ?? chambers[0]?.chamber.id ?? '')
+    setChamberId('') // '' = auto-assign
     setFormOpen(true)
   }
 
@@ -77,6 +83,9 @@ export default function ReceiptsPage() {
   const st = allocationId ? d.allocStats.get(allocationId) : undefined
   const q = Number(boxes) || 0
   const exceeds = !!st && q > st.awaitingReturn
+  const selAlloc = allocationId ? allocById.get(allocationId) : undefined
+  const estCharge = selAlloc && q > 0 ? estimateCharge(q, 30, selAlloc.rateType, selAlloc.rate) : 0
+  const chamberText = (id: string) => id || 'Unassigned'
 
   const list = useMemo(
     () =>
@@ -100,7 +109,10 @@ export default function ReceiptsPage() {
         ['Boxes received', num(r.boxes)],
         ['Variety / grade', `${r.variety} · Grade ${r.grade}`],
         ['Approx. weight', r.weightKg ? `${num(r.weightKg)} kg` : '—'],
-        ['Chamber / rack', `${r.chamberId} · from R${String(r.rackStart).padStart(2, '0')}`],
+        ['Chamber / rack', r.chamberId ? `${r.chamberId} · from R${String(r.rackStart).padStart(2, '0')}` : 'Unassigned'],
+        ['Destination', r.destination || '—'],
+        ['Received from', r.sourceLocation || '—'],
+        ['Remark', r.remark || '—'],
         ['Vehicle / driver', [r.vehicle, r.driver].filter(Boolean).join(' · ') || '—'],
         ['Storage starts', fmtDate(lot?.storageStartDate)],
         ...(r.override ? ([['Note', 'Manager override: received above issued boxes']] as [string, string][]) : []),
@@ -114,14 +126,14 @@ export default function ReceiptsPage() {
     if (!growerId) return setError('Select a grower')
     if (!allocationId) return setError('Select an allocation')
     if (!Number.isInteger(q) || q <= 0) return setError('Enter a whole number of boxes received')
-    if (!chamberId) return setError('Select a chamber')
     const rk = Number(rack)
-    if (!Number.isInteger(rk) || rk < 1 || (chamberStat && rk > chamberStat.chamber.racks))
+    if (chamberId && (!Number.isInteger(rk) || rk < 1 || (chamberStat && rk > chamberStat.chamber.racks)))
       return setError(`Starting rack must be between 1 and ${chamberStat?.chamber.racks ?? 1}`)
     if (exceeds && !override) return setError('Boxes exceed issued boxes awaiting return. A manager override is required.')
     const res = receiveApples({
       allocationId, boxes: q, variety, grade, weightKg: Number(weight) || undefined, date,
-      vehicle: vehicle.trim() || undefined, driver: driver.trim() || undefined, chamberId, rackStart: rk,
+      vehicle: vehicle.trim() || undefined, driver: driver.trim() || undefined, chamberId: chamberId || undefined, rackStart: chamberId ? rk : undefined,
+      destination: destination.trim() || undefined, sourceLocation: sourceLocation.trim() || undefined, remark: remark.trim() || undefined,
       notes: notes.trim() || undefined, override: exceeds ? override : undefined,
     })
     if (!res.ok) {
@@ -173,7 +185,7 @@ export default function ReceiptsPage() {
         ) : (
           <TableWrap>
             <thead>
-              <tr><th>Receipt</th><th>Date</th><th>Grower</th><th>Lot</th><th className="r">Boxes</th><th>Variety</th><th>Grade</th><th>Chamber</th><th>Vehicle</th><th /></tr>
+              <tr><th>Receipt</th><th>Date</th><th>Grower</th><th>Lot</th><th className="r">Boxes</th><th>Variety</th><th>Grade</th><th>Chamber</th><th>Destination</th><th>Driver</th><th>Remark</th><th>Vehicle</th><th /></tr>
             </thead>
             <tbody>
               {list.map((r) => (
@@ -185,7 +197,10 @@ export default function ReceiptsPage() {
                   <td className="r num">{num(r.boxes)}{r.override && <span className="rcp-sub" style={{ color: 'var(--amber)' }}>override</span>}</td>
                   <td>{r.variety}</td>
                   <td>{r.grade}</td>
-                  <td>{r.chamberId}</td>
+                  <td>{r.chamberId ? r.chamberId : <span className="pill amber">Unassigned</span>}</td>
+                  <td>{r.destination || '—'}{r.sourceLocation && <span className="rcp-sub">from {r.sourceLocation}</span>}</td>
+                  <td>{r.driver || '—'}</td>
+                  <td>{r.remark || '—'}</td>
                   <td>{r.vehicle || '—'}</td>
                   <td className="r"><Button size="sm" variant="ghost" icon={<Eye />} onClick={() => setDoc(receiptDoc(r))}>Receipt</Button></td>
                 </tr>
@@ -257,13 +272,34 @@ export default function ReceiptsPage() {
           <Field label="Approx. weight (kg)" hint="Optional"><Input type="number" min={0} value={weight} onChange={(e) => setWeight(e.target.value)} /></Field>
           <Field label="Vehicle"><Input value={vehicle} onChange={(e) => setVehicle(e.target.value)} placeholder="JK01 AB 1234" /></Field>
           <Field label="Driver"><Input value={driver} onChange={(e) => setDriver(e.target.value)} /></Field>
-          <Field label="Chamber" hint={chamberStat ? `${num(chamberStat.available)} boxes free of ${num(chamberStat.chamber.capacity)}` : undefined}>
+          <Field label="Destination site">
+            <Select value={destination} onChange={(e) => setDestination(e.target.value)}>
+              <option value="">—</option>
+              {locations.sites.map((x) => <option key={x}>{x}</option>)}
+            </Select>
+          </Field>
+          <Field label="Received from (pickup)" hint="Pick or type a new one">
+            <Input list="rcp-pickups" value={sourceLocation} onChange={(e) => setSourceLocation(e.target.value)} placeholder="e.g. Sumbal" />
+            <datalist id="rcp-pickups">{locations.pickupPoints.map((p) => <option key={p} value={p} />)}</datalist>
+          </Field>
+          <Field label="Remark" full><Input value={remark} onChange={(e) => setRemark(e.target.value)} placeholder="Variety / weight notes" /></Field>
+          {selAlloc && (
+            <div className="full rcp-live">
+              <div><small>Agreement rate</small><b>{rateLabel(selAlloc.rateType, selAlloc.rate)}</b></div>
+              <div className="hot">
+                <small>{selAlloc.rateType === 'PER_CRATE' ? `Estimated charge · ${num(q)} × ₹${selAlloc.rate} flat` : 'Estimated charge · 30-day preview'}</small>
+                <b>{q > 0 ? inr(estCharge) : '—'}</b>
+              </div>
+            </div>
+          )}
+          <Field label="Chamber" hint={chamberStat ? `${num(chamberStat.available)} boxes free of ${num(chamberStat.chamber.capacity)}` : 'Emptiest chamber with room is chosen on save'}>
             <Select value={chamberId} onChange={(e) => setChamberId(e.target.value)}>
+              <option value="">Auto-assign (emptiest chamber)</option>
               {chambers.map((c) => <option key={c.chamber.id} value={c.chamber.id}>{c.chamber.id} · {num(c.available)} free</option>)}
             </Select>
           </Field>
-          <Field label="Starting rack" hint={chamberStat ? `Racks 1–${chamberStat.chamber.racks}` : undefined}>
-            <Input type="number" min={1} max={chamberStat?.chamber.racks} value={rack} onChange={(e) => setRack(e.target.value)} />
+          <Field label="Starting rack" hint={chamberStat ? `Racks 1–${chamberStat.chamber.racks}` : 'Set automatically'}>
+            <Input type="number" min={1} max={chamberStat?.chamber.racks} disabled={!chamberId} value={rack} onChange={(e) => setRack(e.target.value)} />
           </Field>
           <Field label="Notes" full><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Condition on arrival, packing, remarks" /></Field>
           {error && <div className="full"><Alert kind="error">{error}</Alert></div>}
@@ -286,7 +322,7 @@ export default function ReceiptsPage() {
               <div>
                 <div className="muted">Lot created</div>
                 <Link className="code link" to={`/admin/inventory/${resultLot.id}`} onClick={() => setResult(null)}>{resultLot.code}</Link>
-                <div className="muted">{num(resultLot.boxesReceived)} boxes · {resultLot.chamberId} · {resultLot.rackLabel}</div>
+                <div className="muted">{num(resultLot.boxesReceived)} boxes · {chamberText(resultLot.chamberId)}{resultLot.chamberId ? ` · ${resultLot.rackLabel}` : ''}</div>
               </div>
             </div>
             <div className="rcp-result">

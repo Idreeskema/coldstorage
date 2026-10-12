@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { BookOpen, Plus, Receipt, X } from 'lucide-react'
 import {
@@ -6,7 +6,8 @@ import {
   TableWrap, Textarea, toast, type DocSpec,
 } from '../../ui'
 import { useDerived, useStore } from '../../core/store'
-import { fmtDate, inr, today } from '../../core/format'
+import { fmtDate, inr, rateLabel, today } from '../../core/format'
+import { buildTradeRows } from '../../core/calc'
 import type { Payment, PayMethod } from '../../core/types'
 import './payments.css'
 
@@ -14,18 +15,22 @@ export const METHOD_LABEL: Record<PayMethod, string> = {
   CASH: 'Cash', UPI: 'UPI', BANK: 'Bank Transfer', CHEQUE: 'Cheque', OTHER: 'Other',
 }
 
-type Filter = 'all' | 'due' | 'partial' | 'paid'
+type Filter = 'all' | 'due' | 'partial' | 'paid' | 'advance'
 const FILTERS: { id: Filter; label: string }[] = [
   { id: 'all', label: 'All' }, { id: 'due', label: 'Due' }, { id: 'partial', label: 'Partial' }, { id: 'paid', label: 'Paid' },
+  { id: 'advance', label: 'Advance' },
 ]
 
-export const payStatus = (paid: number, due: number): 'Paid' | 'Partial' | 'Pending' =>
-  due <= 0 ? 'Paid' : paid > 0 ? 'Partial' : 'Pending'
+export const payStatus = (paid: number, due: number): 'Paid' | 'Partial' | 'Pending' | 'Advance' =>
+  due < -1 ? 'Advance' : due <= 1 ? 'Paid' : paid > 0 ? 'Partial' : 'Pending'
 
 export default function PaymentsPage() {
   const d = useDerived()
   const growers = useStore((s) => s.growers)
   const payments = useStore((s) => s.payments)
+  const allocations = useStore((s) => s.allocations)
+  const data = useStore((s) => s)
+  const trade = useMemo(() => buildTradeRows(data, d), [data, d])
   const recordPayment = useStore((s) => s.recordPayment)
   const nav = useNavigate()
   const [sp, setSp] = useSearchParams()
@@ -37,14 +42,14 @@ export default function PaymentsPage() {
   const [modal, setModal] = useState(false)
   const [receipt, setReceipt] = useState<Payment | null>(null)
   const [afterSave, setAfterSave] = useState<Payment | null>(null)
-  const [form, setForm] = useState({ growerId: '', amount: '', date: today(), method: 'CASH' as PayMethod, reference: '', notes: '' })
+  const [form, setForm] = useState({ growerId: '', allocationId: '', amount: '', date: today(), method: 'CASH' as PayMethod, reference: '', notes: '' })
   const [error, setError] = useState('')
 
   const gName = (id: string) => growers.find((g) => g.id === id)?.name ?? 'Unknown'
   const gCode = (id: string) => growers.find((g) => g.id === id)?.code ?? ''
 
   const openModal = (growerId = '') => {
-    setForm({ growerId, amount: '', date: today(), method: 'CASH', reference: '', notes: '' })
+    setForm({ growerId, allocationId: '', amount: '', date: today(), method: 'CASH', reference: '', notes: '' })
     setError('')
     setModal(true)
   }
@@ -74,9 +79,10 @@ export default function PaymentsPage() {
         .filter((r) => r.s && (r.s.charges > 0 || r.s.paid > 0))
         .filter((r) => !growerFilter || r.g.id === growerFilter)
         .filter((r) => {
-          if (status === 'due') return r.s.due > 0
-          if (status === 'partial') return r.s.paid > 0 && r.s.due > 0
-          if (status === 'paid') return r.s.due <= 0
+          if (status === 'due') return r.s.due > 1
+          if (status === 'partial') return r.s.paid > 0 && r.s.due > 1
+          if (status === 'paid') return r.s.due <= 1 && r.s.due >= -1
+          if (status === 'advance') return r.s.due < -1
           return true
         })
         .sort((a, b) => b.s.due - a.s.due),
@@ -93,12 +99,18 @@ export default function PaymentsPage() {
 
   const selStats = form.growerId ? d.growerStats.get(form.growerId) : undefined
   const amountNum = Number(form.amount)
+  const growerAllocs = form.growerId ? allocations.filter((a) => a.growerId === form.growerId) : []
+  const selTrade = form.allocationId ? trade.find((t) => t.allocationId === form.allocationId) : undefined
+  const selAlloc = form.allocationId ? allocations.find((a) => a.id === form.allocationId) : undefined
+  const allocLabel = (id?: string) => { const a = allocations.find((x) => x.id === id); return a ? (a.externalRef ?? a.code) : '—' }
+  /** Signed balance for the scope being paid against: the agreement when one is chosen, else the whole grower. */
+  const scopeDue = selTrade ? selTrade.balance : selStats?.due ?? 0
 
   const submit = () => {
     if (!form.growerId) return setError('Select a grower')
     if (!(amountNum > 0)) return setError('Enter a payment amount greater than zero')
     const res = recordPayment({
-      growerId: form.growerId, amount: amountNum, date: form.date, method: form.method,
+      growerId: form.growerId, allocationId: form.allocationId || undefined, amount: amountNum, date: form.date, method: form.method,
       reference: form.reference.trim() || undefined, notes: form.notes.trim() || undefined,
     })
     if (!res.ok) {
@@ -122,7 +134,8 @@ export default function PaymentsPage() {
         ['Payment method', METHOD_LABEL[p.method]],
         ['Reference', p.reference || '—'],
         ['Notes', p.notes || '—'],
-        ['Outstanding balance', st ? inr(Math.max(0, st.due)) : '—'],
+        ['Agreement', p.allocationId ? allocLabel(p.allocationId) : 'Not tagged'],
+        st && st.due < -1 ? ['Advance held', inr(-st.due)] : ['Outstanding balance', st ? inr(Math.max(0, st.due)) : '—'],
       ],
     }
   }
@@ -139,7 +152,7 @@ export default function PaymentsPage() {
       <div className="grid cols-4">
         <Kpi label="Total charges" value={inr(kpi.totalCharges)} foot="Accrued to date" />
         <Kpi label="Collected" value={inr(kpi.paid)} foot={`${payments.length} payments`} />
-        <Kpi label="Outstanding" value={inr(Math.max(0, kpi.outstanding))} tone={kpi.outstanding > 0 ? 'bad' : undefined} foot="Charges less collections" to="/admin/payments?status=due" />
+        <Kpi label="Outstanding" value={inr(kpi.outstanding)} tone={kpi.outstanding > 0 ? 'bad' : undefined} foot={`Advances held ${inr(kpi.advances)}`} to="/admin/payments?status=due" />
         <Kpi label="Growers with dues" value={kpi.growersWithDue} tone={kpi.growersWithDue > 0 ? 'warn' : undefined} foot="Tap to filter" to="/admin/payments?status=due" />
       </div>
 
@@ -165,7 +178,7 @@ export default function PaymentsPage() {
               <thead>
                 <tr>
                   <th>Grower</th><th className="r">Total charges</th><th className="r">Paid</th>
-                  <th className="r">Outstanding</th><th>Status</th><th className="r">Actions</th>
+                  <th className="r">Balance</th><th>Status</th><th className="r">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -179,16 +192,18 @@ export default function PaymentsPage() {
                       </td>
                       <td className="r num">{inr(s.charges)}</td>
                       <td className="r num">{inr(s.paid)}</td>
-                      <td className={`r num strong ${s.due > 0 ? 'pay-due' : ''}`}>{inr(Math.max(0, s.due))}</td>
+                      <td className={`r num strong ${s.due > 1 ? 'pay-due' : s.due < -1 ? 'pay-adv' : ''}`}>
+                        {s.due < -1 ? `Advance ${inr(-s.due)}` : inr(Math.max(0, s.due))}
+                      </td>
                       <td>
                         <div className="row" style={{ gap: 6 }}>
                           <StatusPill status={st} />
-                          {s.due > 0 && <StatusPill status="Due" />}
+                          {s.due > 1 && <StatusPill status="Due" />}
                         </div>
                       </td>
                       <td className="r">
                         <div className="row pay-actions">
-                          <Button size="sm" variant={s.due > 0 ? 'primary' : 'secondary'} icon={<Plus />} onClick={() => openModal(g.id)}>Record payment</Button>
+                          <Button size="sm" variant={s.due > 1 ? 'primary' : 'secondary'} icon={<Plus />} onClick={() => openModal(g.id)}>Record payment</Button>
                           <Button size="sm" icon={<BookOpen />} onClick={() => nav(`/admin/ledger/${g.id}`)}>Ledger</Button>
                         </div>
                       </td>
@@ -208,13 +223,14 @@ export default function PaymentsPage() {
           ) : (
             <TableWrap>
               <thead>
-                <tr><th>Code</th><th>Grower</th><th>Date</th><th>Method</th><th>Reference</th><th className="r">Amount</th><th className="r">Receipt</th></tr>
+                <tr><th>Code</th><th>Grower</th><th>Agreement</th><th>Date</th><th>Method</th><th>Reference</th><th className="r">Amount</th><th className="r">Receipt</th></tr>
               </thead>
               <tbody>
                 {history.map((p) => (
                   <tr key={p.id}>
                     <td className="mono">{p.code}</td>
                     <td>{gName(p.growerId)}</td>
+                    <td className="mono">{p.allocationId ? allocLabel(p.allocationId) : <span className="muted">—</span>}</td>
                     <td>{fmtDate(p.date)}</td>
                     <td>{METHOD_LABEL[p.method]}</td>
                     <td className="muted">{p.reference || '—'}</td>
@@ -239,17 +255,28 @@ export default function PaymentsPage() {
       >
         <div className="form-grid">
           <Field label="Grower" full>
-            <Select value={form.growerId} onChange={(e) => { setForm({ ...form, growerId: e.target.value }); setError('') }}>
+            <Select value={form.growerId} onChange={(e) => { setForm({ ...form, growerId: e.target.value, allocationId: '' }); setError('') }}>
               <option value="">Select grower…</option>
               {growers.filter((g) => g.status !== 'PENDING').map((g) => <option key={g.id} value={g.id}>{g.name} · {g.code}</option>)}
             </Select>
           </Field>
+          {selStats && growerAllocs.length > 0 && (
+            <Field label="Against agreement (optional)" full hint={selAlloc ? `${rateLabel(selAlloc.rateType, selAlloc.rate)} · ${selTrade ? `balance ${selTrade.balance < -1 ? `advance ${inr(-selTrade.balance)}` : inr(Math.max(0, selTrade.balance))}` : ''}` : 'Leave blank to apply to the grower account (credited to the first agreement)'}>
+              <Select value={form.allocationId} onChange={(e) => { setForm({ ...form, allocationId: e.target.value }); setError('') }}>
+                <option value="">Not tagged to an agreement</option>
+                {growerAllocs.map((a) => {
+                  const t = trade.find((x) => x.allocationId === a.id)
+                  return <option key={a.id} value={a.id}>{a.externalRef ?? a.code} · {rateLabel(a.rateType, a.rate)}{t ? ` · ${t.balance < -1 ? `adv ${inr(-t.balance)}` : `due ${inr(Math.max(0, t.balance))}`}` : ''}</option>
+                })}
+              </Select>
+            </Field>
+          )}
           {selStats && (
             <div className="full pay-outstanding">
-              <span className="muted">Outstanding balance</span>
-              <b className="num">{inr(Math.max(0, selStats.due))}</b>
-              {selStats.due > 0 && (
-                <button className="link" onClick={() => setForm({ ...form, amount: String(Math.round(selStats.due)) })}>Pay full amount</button>
+              <span className="muted">{scopeDue < -1 ? 'Advance held' : 'Outstanding balance'}{selTrade ? ' (agreement)' : ''}</span>
+              <b className={`num ${scopeDue < -1 ? 'pay-adv' : ''}`}>{inr(Math.abs(scopeDue) < 1 ? 0 : Math.abs(scopeDue))}</b>
+              {scopeDue > 1 && (
+                <button className="link" onClick={() => setForm({ ...form, amount: String(Math.round(scopeDue)) })}>Pay full amount</button>
               )}
             </div>
           )}
@@ -270,8 +297,8 @@ export default function PaymentsPage() {
           <Field label="Notes (optional)" full>
             <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           </Field>
-          {selStats && amountNum > Math.max(0, selStats.due) && selStats.due > 0 && (
-            <div className="full"><Alert kind="warning">This amount is more than the outstanding balance and will leave the grower with a credit.</Alert></div>
+          {selStats && amountNum > Math.max(0, scopeDue) && scopeDue > 1 && (
+            <div className="full"><Alert kind="warning">This amount is more than the outstanding balance and will be held as an advance.</Alert></div>
           )}
           {error && <div className="full"><Alert kind="error">{error}</Alert></div>}
         </div>
@@ -297,3 +324,4 @@ export default function PaymentsPage() {
     </div>
   )
 }
+

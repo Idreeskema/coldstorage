@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Lock, RotateCcw } from 'lucide-react'
+import { Lock, Plus, RotateCcw, X } from 'lucide-react'
 import { Alert, Button, Card, Field, Input, Modal, PageHeader, Select, toast } from '../../ui'
 import { useDerived, useStore } from '../../core/store'
 import { estimateCharge } from '../../core/calc'
@@ -12,9 +12,38 @@ const MODELS: { id: Model; label: string; hint: string }[] = [
   { id: 'PER_DAY', label: 'Per box / day', hint: 'Charged for every day a box is in the store' },
   { id: 'PER_MONTH', label: 'Per box / month', hint: 'Pro-rated per 30-day cycle' },
   { id: 'PER_SEASON', label: 'Per box / season', hint: 'One flat charge per box received' },
+  { id: 'PER_CRATE', label: 'Per crate, flat', hint: 'Crates received × rate. No time component' },
   { id: 'CUSTOM', label: 'Custom rate', hint: 'Choose the billing basis yourself' },
 ]
-const basisWord = (t: RateType) => (t === 'PER_DAY' ? 'day' : t === 'PER_MONTH' ? 'month' : 'season')
+const rateFieldLabel = (t: RateType) =>
+  t === 'PER_CRATE' ? 'Rate (₹ per crate)' : `Rate (₹ per box per ${t === 'PER_DAY' ? 'day' : t === 'PER_MONTH' ? 'month' : 'season'})`
+
+/** Editable list of names (pickup points / sites). */
+function ListEditor({ label, items, onChange, placeholder }: { label: string; items: string[]; onChange: (v: string[]) => void; placeholder: string }) {
+  const [text, setText] = useState('')
+  const add = () => {
+    const v = text.trim()
+    if (!v) return
+    if (items.some((x) => x.toLowerCase() === v.toLowerCase())) return toast(`${v} is already in the list`, 'error')
+    onChange([...items, v])
+    setText('')
+  }
+  return (
+    <div className="stack">
+      <div className="set-list-title">{label}</div>
+      <div className="set-tags">
+        {items.length === 0 && <span className="muted">None yet</span>}
+        {items.map((x) => (
+          <span key={x} className="set-tag">{x}<button type="button" aria-label={`Remove ${x}`} onClick={() => onChange(items.filter((i) => i !== x))}><X /></button></span>
+        ))}
+      </div>
+      <div className="row" style={{ gap: 8 }}>
+        <Input value={text} placeholder={placeholder} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add() } }} />
+        <Button icon={<Plus />} onClick={add}>Add</Button>
+      </div>
+    </div>
+  )
+}
 
 const PERMISSIONS: { label: string; def: boolean }[] = [
   { label: 'Register growers', def: true },
@@ -31,6 +60,7 @@ const PERMISSIONS: { label: string; def: boolean }[] = [
 export default function SettingsPage() {
   const settings = useStore((s) => s.settings)
   const lots = useStore((s) => s.lots)
+  const allocations = useStore((s) => s.allocations)
   const updateSettings = useStore((s) => s.updateSettings)
   const resetDemo = useStore((s) => s.resetDemo)
   const d = useDerived()
@@ -48,6 +78,8 @@ export default function SettingsPage() {
   const boxes = Math.max(0, Number(previewBoxes) || 0)
   const dirty = rateType !== settings.rateType || (rateOk && rateNum !== settings.rate)
   const lotsAffected = lots.length
+  const allocCount = allocations.length
+  const perCrate = rateType === 'PER_CRATE'
 
   const preview = useMemo(
     () => [30, 90].map((days) => ({ days, charge: estimateCharge(boxes, days, rateType, rateOk ? rateNum : 0) })),
@@ -58,8 +90,20 @@ export default function SettingsPage() {
     if (!rateOk) return toast('Enter a valid rate', 'error')
     const res = updateSettings({ rateType, rate: rateNum }, apply)
     if (!res.ok) return toast(res.error ?? 'Could not save pricing', 'error')
-    toast(apply ? `Rate updated and applied to ${num(lotsAffected)} existing lots` : 'Rate updated for new lots')
+    toast(apply ? `Rate updated and applied to ${num(allocCount)} agreements and ${num(lotsAffected)} lots` : 'Default rate updated for new agreements')
     setApply(false)
+  }
+
+  /* locations */
+  const [pickups, setPickups] = useState(settings.locations.pickupPoints)
+  const [sites, setSites] = useState(settings.locations.sites)
+  const locDirty = JSON.stringify([pickups, sites]) !== JSON.stringify([settings.locations.pickupPoints, settings.locations.sites])
+  const saveLocations = () => {
+    const res = updateSettings({ locations: { pickupPoints: pickups, sites } })
+    if (!res.ok) return toast(res.error ?? 'Could not save locations', 'error')
+    const l = useStore.getState().settings.locations
+    setPickups(l.pickupPoints); setSites(l.sites)
+    toast('Locations saved')
   }
 
   /* store details */
@@ -92,6 +136,7 @@ export default function SettingsPage() {
     setBasis(useStore.getState().settings.rateType)
     setRate(String(useStore.getState().settings.rate))
     const s = useStore.getState().settings
+    setPickups(s.locations.pickupPoints); setSites(s.locations.sites)
     setName(s.storeName); setSeason(s.season); setCapacity(String(s.capacity))
     toast('Demo data reset to the original sample set')
   }
@@ -102,8 +147,8 @@ export default function SettingsPage() {
 
       <div className="set-grid">
         <Card
-          title="Storage pricing"
-          sub={<>Current rate: <b>{rateLabel(settings.rateType, settings.rate)}</b></>}
+          title="Default storage rate"
+          sub={<>Default for <b>new</b> agreements: <b>{rateLabel(settings.rateType, settings.rate)}</b>. Each agreement keeps its own rate.</>}
           action={<button className="btn primary" disabled={!dirty || !rateOk} onClick={savePricing}>Save pricing</button>}
         >
           <div className="stack">
@@ -123,10 +168,11 @@ export default function SettingsPage() {
                     <option value="PER_DAY">Per box / day</option>
                     <option value="PER_MONTH">Per box / month</option>
                     <option value="PER_SEASON">Per box / season</option>
+                    <option value="PER_CRATE">Per crate, flat</option>
                   </Select>
                 </Field>
               )}
-              <Field label={`Rate (₹ per box per ${basisWord(rateType)})`} error={rateOk ? undefined : 'Enter a valid rate'}>
+              <Field label={rateFieldLabel(rateType)} error={rateOk ? undefined : 'Enter a valid rate'}>
                 <Input type="number" inputMode="decimal" min={0} step="0.01" value={rate} onChange={(e) => setRate(e.target.value)} />
               </Field>
             </div>
@@ -134,8 +180,8 @@ export default function SettingsPage() {
             <label className="set-check">
               <input type="checkbox" checked={apply} onChange={(e) => setApply(e.target.checked)} />
               <span>
-                Apply to existing lots
-                <small>{apply ? `All ${num(lotsAffected)} lots, including stored ones, will be re-priced.` : 'Off: only lots received from now on use the new rate. Existing lots keep their own rate.'}</small>
+                Apply to all existing agreements and lots
+                <small>{apply ? `All ${num(allocCount)} agreements and ${num(lotsAffected)} lots, including stored ones, will be re-priced.` : 'Off: only agreements created from now on use this rate. Existing agreements and lots keep their own rate.'}</small>
               </span>
             </label>
 
@@ -146,9 +192,9 @@ export default function SettingsPage() {
                   <Input type="number" className="sm" min={0} value={previewBoxes} onChange={(e) => setPreviewBoxes(e.target.value)} aria-label="Boxes for preview" /> boxes
                 </label>
               </div>
-              {rateType === 'PER_SEASON' ? (
+              {rateType === 'PER_SEASON' || perCrate ? (
                 <div className="set-preview-row">
-                  <span>{num(boxes)} boxes × {inr(rateOk ? rateNum : 0)} per season</span>
+                  <span>{num(boxes)} {perCrate ? 'crates' : 'boxes'} × {inr(rateOk ? rateNum : 0)}{perCrate ? '' : ' per season'}</span>
                   <b className="num">{inr(preview[0].charge)}</b>
                 </div>
               ) : (
@@ -159,7 +205,7 @@ export default function SettingsPage() {
                   </div>
                 ))
               )}
-              <div className="muted set-preview-note">Estimate at {rateLabel(rateType, rateOk ? rateNum : 0)}. Actual charges depend on each lot's dispatch dates.</div>
+              <div className="muted set-preview-note">Estimate at {rateLabel(rateType, rateOk ? rateNum : 0)}. {perCrate ? 'Flat charge on crates received; dispatches do not reduce it.' : "Actual charges depend on each lot's dispatch dates."}</div>
             </div>
           </div>
         </Card>
@@ -180,6 +226,18 @@ export default function SettingsPage() {
           </div>
         </Card>
       </div>
+
+      <Card
+        title="Locations"
+        sub="Pickup points and storage sites offered when issuing and receiving crates"
+        className="set-card"
+        action={<button className="btn primary" disabled={!locDirty} onClick={saveLocations}>Save locations</button>}
+      >
+        <div className="set-grid" style={{ marginBottom: 0 }}>
+          <ListEditor label="Pickup points" items={pickups} onChange={setPickups} placeholder="e.g. Al Rehman" />
+          <ListEditor label="Storage sites" items={sites} onChange={setSites} placeholder="e.g. Al Meazan" />
+        </div>
+      </Card>
 
       <Card
         title="Staff permissions"

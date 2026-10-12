@@ -1,6 +1,7 @@
 .pay-section { margin-top: 20px; }
 .pay-sub { font-size: 12px; margin-top: 1px; }
 .pay-due { color: var(--red); }
+.pay-adv { color: var(--primary); }
 .pay-actions { justify-content: flex-end; flex-wrap: nowrap; gap: 6px; }
 .pay-chip-filter { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px 0 12px; border-radius: 14px; background: var(--primary-soft); color: var(--primary); font-size: 12.5px; }
 .pay-chip-filter button { display: grid; place-items: center; width: 20px; height: 20px; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }

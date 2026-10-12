@@ -6,6 +6,7 @@ import type {
   Activity, Allocation, AppleReceipt, BoxIssue, Chamber, Dispatch, Grower, Lot, Notification,
   Payment, Settings, StorageRequest, PayMethod,
 } from './types'
+import { defaultLocations } from './types'
 import { addDays, addMonths, today } from './format'
 import { type Data, derive } from './calc'
 
@@ -14,7 +15,7 @@ const ts = (day: string, hhmm: string) => `${day}T${hhmm}:00`
 
 export const seedSettings = (): Settings => ({
   storeName: 'Kashmir Fresh CA Storage', season: 'Season 2026', capacity: 100000,
-  rateType: 'PER_MONTH', rate: 28, currency: 'INR',
+  rateType: 'PER_MONTH', rate: 28, currency: 'INR', locations: defaultLocations(),
 })
 
 const VILLAGES: [string, string][] = [
@@ -98,6 +99,7 @@ export function buildSeed(): Data {
     const al: Allocation = {
       id: `al${++nAlloc}`, code: `ALLOC-2026-${p(nAlloc, 4)}`, requestId: rq.id, growerId: g.id, boxes: row.alloc,
       durationMonths: row.months, createdAt: ts(addDays(reqDay, 1), '11:00'),
+      rateType: settings.rateType, rate: settings.rate,
     }
     rq.allocationId = al.id
     requests.push(rq); allocations.push(al)

@@ -5,10 +5,13 @@
 //   Current storage    = Apple received − Dispatched
 //   Reserved capacity  = Σ max(0, Allocated − Received)   (allocated, not yet in store)
 //   Available capacity = Capacity − Stored − Reserved
-//   Outstanding        = Total charges − Payments
+//   Balance (due)      = Total charges − Payments   (negative = customer advance / credit)
+//   Outstanding        = Σ over growers of max(0, due)  — credits never hide other growers' dues
+//   Advances           = Σ over growers of max(0, −due)
+//   PER_CRATE charge   = crates received × rate (flat; no time component; dispatches do not reduce it)
 import type {
   Activity, Allocation, AppleReceipt, BoxIssue, Chamber, Dispatch, Grower, Lot, Notification,
-  Payment, Settings, StorageRequest,
+  Payment, RateType, Settings, StorageRequest,
 } from './types'
 import { addDays, daysBetween, today } from './format'
 
@@ -65,7 +68,10 @@ export interface GrowerStats {
   awaitingReturn: number
   charges: number
   paid: number
+  /** Signed: charges − paid. due > 0 = owes money; due < 0 = advance / credit (see `credit`). */
   due: number
+  /** Customer advance = max(0, −due). Always set by derive(); optional only so hand-built stats objects still compile. */
+  credit?: number
   lots: number
   activeLots: number
 }
@@ -105,8 +111,16 @@ export interface StoreStats {
   todayOutward: number
   totalCharges: number
   paid: number
+  /** Σ over growers of max(0, due): money actually owed. Advances do NOT reduce it. */
   outstanding: number
+  /** Σ over growers of max(0, −due): money held in advance. */
+  advances: number
+  /** totalCharges − paid (net: advances netted against dues). */
+  netBalance: number
   growersWithDue: number
+  growersWithAdvance: number
+  /** Boxes currently stored in lots that have no valid chamber (chamberId '' / unknown). */
+  unplacedBoxes: number
   pendingRequests: number
   pendingGrowers: number
   pendingDispatches: number
@@ -128,7 +142,7 @@ export interface Derived {
 /** Storage charge for one lot as of a date. Dispatched boxes stop accruing on their dispatch date. */
 export function lotCharge(lot: Lot, dispatches: Dispatch[], asOf: string): number {
   if (asOf < lot.storageStartDate) return 0
-  if (lot.rateType === 'PER_SEASON') return lot.rate * lot.boxesReceived
+  if (lot.rateType === 'PER_SEASON' || lot.rateType === 'PER_CRATE') return lot.rate * lot.boxesReceived
   const done = dispatches
     .filter((d) => d.lotId === lot.id && d.status === 'COMPLETED' && d.completedDate)
     .sort((a, b) => a.completedDate!.localeCompare(b.completedDate!))
@@ -146,8 +160,8 @@ export function lotCharge(lot: Lot, dispatches: Dispatch[], asOf: string): numbe
 }
 
 /** Quick estimate for the "charge calculator": boxes × days at a rate. */
-export function estimateCharge(boxes: number, days: number, rateType: Lot['rateType'], rate: number) {
-  if (rateType === 'PER_SEASON') return boxes * rate
+export function estimateCharge(boxes: number, days: number, rateType: RateType, rate: number) {
+  if (rateType === 'PER_SEASON' || rateType === 'PER_CRATE') return boxes * rate
   return rateType === 'PER_DAY' ? boxes * days * rate : (boxes * days * rate) / 30
 }
 
@@ -168,14 +182,17 @@ export interface LedgerRow {
 }
 
 /** Charges are billed per 30-day cycle per lot, with the running cycle shown as "accrued to date". */
-export function buildLedger(data: Data, growerId: string, asOf = today()): LedgerRow[] {
+export function buildLedger(data: Data, growerId: string, asOf = today(), allocationId?: string): LedgerRow[] {
   const rows: Omit<LedgerRow, 'balance'>[] = []
-  const lots = data.lots.filter((l) => l.growerId === growerId)
+  const lots = data.lots.filter((l) => l.growerId === growerId && (!allocationId || l.allocationId === allocationId))
   for (const lot of lots) {
-    if (lot.rateType === 'PER_SEASON') {
+    if (lot.rateType === 'PER_SEASON' || lot.rateType === 'PER_CRATE') {
       rows.push({
         id: `c-${lot.id}`, date: lot.storageStartDate, kind: 'CHARGE',
-        description: `Season storage charge — ${lot.code}`, ref: lot.code,
+        description: lot.rateType === 'PER_CRATE'
+          ? `Crate charge — ${lot.code} (${lot.boxesReceived} crates × ₹${lot.rate})`
+          : `Season storage charge — ${lot.code}`,
+        ref: lot.code,
         debit: lotCharge(lot, data.dispatches, asOf), credit: 0,
       })
       continue
@@ -205,7 +222,7 @@ export function buildLedger(data: Data, growerId: string, asOf = today()): Ledge
         debit: now - prevCharge, credit: 0,
       })
   }
-  for (const p of data.payments.filter((p) => p.growerId === growerId))
+  for (const p of data.payments.filter((p) => p.growerId === growerId && (!allocationId || paymentAllocationId(data, p) === allocationId)))
     rows.push({
       id: p.id, date: p.date, kind: 'PAYMENT', ref: p.code,
       description: `Payment received — ${p.method}${p.reference ? ` (${p.reference})` : ''}`,
@@ -310,12 +327,13 @@ export function derive(data: Data, asOf = today()): Derived {
     growerStats.set(g.id, {
       growerId: g.id, allocated: sum((s) => s.allocated), issued: sum((s) => s.issued), received,
       dispatched, stored: received - dispatched, awaitingReturn: sum((s) => s.awaitingReturn),
-      charges, paid, due: charges - paid, lots: gl.length, activeLots: gl.filter((l) => l.current > 0).length,
+      charges, paid, due: charges - paid, credit: Math.max(0, paid - charges), lots: gl.length, activeLots: gl.filter((l) => l.current > 0).length,
     })
   }
 
   /* store */
   const t = asOf
+  const chamberIds = new Set(data.chambers.map((c) => c.id))
   const stored = lots.reduce((s, l) => s + l.current, 0)
   const reserved = [...allocStats.values()].reduce((s, a) => s + a.remainingAllocation, 0)
   const totalCharges = lots.reduce((s, l) => s + l.accrued, 0)
@@ -335,8 +353,13 @@ export function derive(data: Data, asOf = today()): Derived {
     available: Math.max(0, data.settings.capacity - stored - reserved),
     todayInward: data.receipts.filter((r) => r.receivedDate === t).reduce((s, r) => s + r.boxes, 0),
     todayOutward: completed.filter((d) => d.completedDate === t).reduce((s, d) => s + d.quantity, 0),
-    totalCharges, paid, outstanding: totalCharges - paid,
+    totalCharges, paid,
+    outstanding: [...growerStats.values()].reduce((s, g) => s + Math.max(0, g.due), 0),
+    advances: [...growerStats.values()].reduce((s, g) => s + Math.max(0, -g.due), 0),
+    netBalance: totalCharges - paid,
     growersWithDue: [...growerStats.values()].filter((g) => g.due > 1).length,
+    growersWithAdvance: [...growerStats.values()].filter((g) => g.due < -1).length,
+    unplacedBoxes: lots.filter((l) => l.current > 0 && !chamberIds.has(l.chamberId)).reduce((s, l) => s + l.current, 0),
     pendingRequests: data.requests.filter((r) => r.status === 'PENDING').length,
     pendingGrowers: data.growers.filter((g) => g.status === 'PENDING').length,
     pendingDispatches: data.dispatches.filter((d) => d.status === 'PENDING').length,
@@ -349,6 +372,100 @@ export function derive(data: Data, asOf = today()): Derived {
   }
   return { lots, lotById, growerStats, allocStats, store }
 }
+
+/* ---------- trade ledger (one row per agreement, like the Excel "Main Transactions" sheet) ---------- */
+
+/**
+ * Which allocation a payment belongs to.
+ * DECISION: a payment carries an optional `allocationId`. A payment WITHOUT one is attributed to the
+ * grower's FIRST allocation (first in `data.allocations` order) so per-agreement balances always add up
+ * to the grower balance. Such payments are reported in `TradeRow.paidUnallocated` so the UI can show
+ * "includes ₹x not tagged to an agreement". A grower with no allocation has no trade row at all.
+ */
+export function paymentAllocationId(data: Data, p: Payment): string | undefined {
+  if (p.allocationId && data.allocations.some((a) => a.id === p.allocationId)) return p.allocationId
+  return data.allocations.find((a) => a.growerId === p.growerId)?.id
+}
+
+export interface TradeRow {
+  allocationId: string
+  /** Display Transaction ID: the Excel Transaction ID (externalRef) when present, else the allocation code. */
+  txnNo: string
+  externalRef?: string
+  growerId: string
+  name: string
+  agreement: number // agreed quantity
+  rate: number
+  rateType: RateType
+  rateMissing: boolean // rate is 0 → charges are 0 until a rate is set
+  given: number // crates issued
+  received: number // crates received
+  difference: number // given − received
+  amount: number // total charges (PER_CRATE: received × rate)
+  paid: number // payments attributed to this agreement (incl. paidUnallocated)
+  paidUnallocated: number // part of `paid` that was not tagged with an allocationId (see paymentAllocationId)
+  balance: number // amount − paid; negative = advance / credit
+  remarks?: string
+}
+
+export function buildTradeRows(data: Data, derived: Derived = derive(data)): TradeRow[] {
+  const growerById = new Map(data.growers.map((g) => [g.id, g]))
+  const chargeByAlloc = new Map<string, number>()
+  for (const l of derived.lots) chargeByAlloc.set(l.allocationId, (chargeByAlloc.get(l.allocationId) ?? 0) + l.accrued)
+  const paid = new Map<string, number>()
+  const paidUn = new Map<string, number>()
+  for (const p of data.payments) {
+    const id = paymentAllocationId(data, p)
+    if (!id) continue
+    paid.set(id, (paid.get(id) ?? 0) + p.amount)
+    if (id !== p.allocationId) paidUn.set(id, (paidUn.get(id) ?? 0) + p.amount)
+  }
+  return data.allocations.map((a) => {
+    const st = derived.allocStats.get(a.id)
+    const given = st?.issued ?? 0
+    const received = st?.received ?? 0
+    const amount = chargeByAlloc.get(a.id) ?? 0
+    const p = paid.get(a.id) ?? 0
+    return {
+      allocationId: a.id, txnNo: a.externalRef ?? a.code, externalRef: a.externalRef, growerId: a.growerId,
+      name: growerById.get(a.growerId)?.name ?? 'Unknown', agreement: a.boxes, rate: a.rate, rateType: a.rateType,
+      rateMissing: !(a.rate > 0), given, received, difference: given - received, amount, paid: p,
+      paidUnallocated: paidUn.get(a.id) ?? 0, balance: amount - p, remarks: a.remarks,
+    }
+  })
+}
+
+/* ---------- chamber auto-placement ---------- */
+
+export interface Placement { chamberId: string; rackStart: number }
+
+/** Stateful placer: puts each lot in the emptiest chamber that can hold it whole, starting at its first non-full rack. */
+export function createPlacer(chambers: ChamberStat[]) {
+  const state = chambers.map((c) => ({
+    id: c.chamber.id, per: c.chamber.capacity / c.chamber.racks, occ: c.racks.map((r) => r.occupied), cap: c.chamber.capacity,
+  }))
+  const free = (s: (typeof state)[number]) => s.cap - s.occ.reduce((a, b) => a + b, 0)
+  return {
+    /** Returns null when no chamber has room for `boxes`. */
+    place(boxes: number): Placement | null {
+      let best: (typeof state)[number] | undefined
+      for (const s of state) if (free(s) >= boxes && (!best || free(s) > free(best))) best = s
+      if (!best) return null
+      const start = Math.max(0, best.occ.findIndex((o) => o < best!.per - 0.5))
+      let left = boxes
+      for (let i = start; left > 0 && i < best.occ.length; i++) {
+        const take = Math.min(left, best.per - best.occ[i]); if (take > 0) { best.occ[i] += take; left -= take }
+      }
+      for (let i = 0; left > 0 && i < start; i++) {
+        const take = Math.min(left, best.per - best.occ[i]); if (take > 0) { best.occ[i] += take; left -= take }
+      }
+      return { chamberId: best.id, rackStart: start + 1 }
+    },
+  }
+}
+
+/** One-off auto placement against the current derived state. */
+export const autoPlace = (d: Derived, boxes: number): Placement | null => createPlacer(d.store.chambers).place(boxes)
 
 /** Free capacity helper used by validation: capacity not stored and not reserved. */
 export const freeCapacity = (d: Derived) => d.store.available

@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Clock, FilePlus2, FileText, Truck, Wallet } from 'lucide-react'
 import { useStore } from '../../core/store'
-import { fmtDateShort, fmtTime, greeting, inr, num, relativeDay } from '../../core/format'
+import { fmtDateShort, fmtTime, greeting, inr, num, rateLabel, relativeDay } from '../../core/format'
 import { Alert, DocPreview, Progress, Timeline, toast, type DocSpec } from '../../ui'
-import { receiptDoc, stayLabel, useMe } from './shared'
+import { balanceOf, receiptDoc, stayLabel, useMe } from './shared'
 
 export default function GrowerHomePage() {
   const nav = useNavigate()
@@ -13,6 +13,7 @@ export default function GrowerHomePage() {
   const activities = useStore((s) => s.activities)
   const [doc, setDoc] = useState<DocSpec | null>(null)
 
+  const bal = balanceOf(stats)
   const liveLots = lots.filter((l) => l.current > 0)
   const progress = stats.allocated ? (stats.received / stats.allocated) * 100 : 0
   const recent = activities.filter((a) => a.growerId === gid).slice(0, 5)
@@ -41,9 +42,9 @@ export default function GrowerHomePage() {
       <section className="m-hero ga-hero">
         <div className="ga-hero-head">
           <span className="lbl">My storage</span>
-          <span className="lbl">{num(stats.allocated)} boxes allocated</span>
+          <span className="lbl">{num(stats.allocated)} crates allocated</span>
         </div>
-        <div className="big">{num(stats.stored)} <span style={{ fontSize: 15, fontWeight: 500, opacity: 0.8 }}>boxes in store</span></div>
+        <div className="big">{num(stats.stored)} <span style={{ fontSize: 15, fontWeight: 500, opacity: 0.8 }}>crates in store</span></div>
         <Progress value={progress} />
         <div className="ga-hero-row">
           <div><span className="lbl">Received</span><b>{num(stats.received)}</b></div>
@@ -55,7 +56,9 @@ export default function GrowerHomePage() {
       <div className="ga-money">
         <div><small>Charges</small><b>{inr(stats.charges)}</b></div>
         <div><small>Paid</small><b>{inr(stats.paid)}</b></div>
-        <div className={stats.due > 1 ? 'due' : 'clear'}><small>Due</small><b>{inr(Math.max(0, stats.due))}</b></div>
+        {bal.isCredit
+          ? <div className="clear"><small>Advance/Credit</small><b>{inr(bal.credit)}</b></div>
+          : <div className={bal.due > 1 ? 'due' : 'clear'}><small>Due</small><b>{inr(bal.due)}</b></div>}
       </div>
 
       <div className="m-section">Quick actions</div>
@@ -73,8 +76,8 @@ export default function GrowerHomePage() {
         <div className="ga-list">
           {liveLots.map((l) => (
             <button key={l.id} className="m-list-item ga-item" onClick={() => nav('/app/storage')}>
-              <div className="grow"><b>{l.code}</b><span>Chamber {l.chamberId} · {stayLabel(l)}</span></div>
-              <div className="end"><b>{num(l.current)}</b><span className="muted" style={{ fontSize: 12 }}>boxes</span></div>
+              <div className="grow"><b>{l.code}</b><span>Chamber {l.chamberId} &middot; {stayLabel(l)} &middot; {rateLabel(l.rateType, l.rate)}</span></div>
+              <div className="end"><b>{num(l.current)}</b><span className="muted" style={{ fontSize: 12 }}>crates</span></div>
             </button>
           ))}
         </div>

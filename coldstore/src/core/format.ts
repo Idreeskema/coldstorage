@@ -1,4 +1,5 @@
 // Formatting + date helpers
+import type { RateType } from './types'
 
 export const inr = (n: number) =>
   '₹' + Math.round(n).toLocaleString('en-IN')
@@ -72,5 +73,7 @@ export const greeting = () => {
   return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
 }
 
-export const rateLabel = (type: 'PER_DAY' | 'PER_MONTH' | 'PER_SEASON', rate: number) =>
-  `₹${rate} / box / ${type === 'PER_DAY' ? 'day' : type === 'PER_MONTH' ? 'month' : 'season'}`
+export const rateLabel = (type: RateType, rate: number) =>
+  type === 'PER_CRATE'
+    ? `₹${rate} / crate`
+    : `₹${rate} / box / ${type === 'PER_DAY' ? 'day' : type === 'PER_MONTH' ? 'month' : 'season'}`

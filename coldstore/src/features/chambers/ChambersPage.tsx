@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useDerived } from '../../core/store'
 import { fmtDate, num } from '../../core/format'
 import type { ChamberStat, RackCell } from '../../core/calc'
-import { Button, Card, EmptyState, PageHeader, Progress, StatusPill, TableWrap } from '../../ui'
+import { Alert, Button, Card, EmptyState, PageHeader, Progress, StatusPill, TableWrap } from '../../ui'
 import './chambers.css'
 
 const tone = (pct: number) => (pct >= 90 ? 'bad' : pct >= 75 ? 'warn' : '')
@@ -12,12 +12,20 @@ const rackRange = (label: string): [number, number] | null => {
   return m ? [Number(m[1]), Number(m[2] ?? m[1])] : null
 }
 
-function ChamberList({ chambers }: { chambers: ChamberStat[] }) {
+function ChamberList({ chambers, unplaced }: { chambers: ChamberStat[]; unplaced: number }) {
   const total = chambers.reduce((s, c) => s + c.chamber.capacity, 0)
   const occ = chambers.reduce((s, c) => s + c.occupied, 0)
   return (
     <div className="page">
       <PageHeader title="Chambers" sub={`${chambers.length} chambers · ${num(occ)} of ${num(total)} boxes stored (${total ? ((occ / total) * 100).toFixed(0) : 0}%)`} />
+      {unplaced > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <Alert kind="warning">
+            <b className="num">{num(unplaced)}</b> boxes are in storage but not placed in any chamber.{' '}
+            <Link className="link" to="/admin/inventory?chamber=unassigned">View unplaced lots</Link>
+          </Alert>
+        </div>
+      )}
       <div className="chm-list">
         {chambers.map((c) => (
           <Link key={c.chamber.id} to={`/admin/chambers/${c.chamber.id}`} className="card chm-card">
@@ -133,7 +141,7 @@ function ChamberDetail({ c }: { c: ChamberStat }) {
 export default function ChambersPage() {
   const { chamberId } = useParams()
   const { store } = useDerived()
-  if (!chamberId) return <ChamberList chambers={store.chambers} />
+  if (!chamberId) return <ChamberList chambers={store.chambers} unplaced={store.unplacedBoxes} />
   const c = store.chambers.find((x) => x.chamber.id.toLowerCase() === chamberId.toLowerCase())
   if (!c)
     return (

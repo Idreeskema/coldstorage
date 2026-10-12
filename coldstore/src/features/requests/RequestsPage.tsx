@@ -3,8 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus } from 'lucide-react'
 import { useDerived, useStore } from '../../core/store'
 import { requestStatusLabel } from '../../core/calc'
-import type { RequestStatus, StorageRequest } from '../../core/types'
-import { addDays, fmtDate, fmtDateShort, num, today } from '../../core/format'
+import type { RateType, RequestStatus, StorageRequest } from '../../core/types'
+import { addDays, fmtDate, fmtDateShort, num, rateLabel, today } from '../../core/format'
 import {
   Alert, Button, Card, Chips, EmptyState, Field, Input, Modal, PageHeader, Select, StatusPill, TableWrap, Textarea, toast,
 } from '../../ui'
@@ -29,12 +29,16 @@ export default function RequestsPage() {
   const createRequest = useStore((s) => s.createRequest)
   const approveRequest = useStore((s) => s.approveRequest)
   const rejectRequest = useStore((s) => s.rejectRequest)
+  const updateAllocation = useStore((s) => s.updateAllocation)
+  const settings = useStore((s) => s.settings)
 
   const filter = (FILTERS.some((f) => f.id === sp.get('status')) ? sp.get('status') : 'ALL') as Filter
   const [selId, setSelId] = useState<string | null>(null)
   const [boxes, setBoxes] = useState('')
   const [err, setErr] = useState('')
   const [reason, setReason] = useState('')
+  const [rateTxt, setRateTxt] = useState('')
+  const [rateKind, setRateKind] = useState<RateType>('PER_MONTH')
   const [newOpen, setNewOpen] = useState(sp.get('new') === '1')
 
   const gName = (id: string) => growers.find((g) => g.id === id)?.name ?? 'Unknown'
@@ -50,7 +54,9 @@ export default function RequestsPage() {
   const closed = !sel || sel.status === 'REJECTED' || sel.status === 'COMPLETED'
 
   const select = (r: StorageRequest) => {
-    setSelId(r.id); setErr(''); setReason('')
+    setSelId(r.id); setErr(''); setReason(''); setRateTxt('')
+    const al = r.allocationId ? allocations.find((a) => a.id === r.allocationId) : undefined
+    setRateKind(al?.rateType ?? settings.rateType)
     setBoxes(String(Math.max(0, Math.min(r.requestedBoxes - r.allocatedBoxes, d.store.available))))
   }
 
@@ -60,12 +66,22 @@ export default function RequestsPage() {
     setSp(n, { replace: true })
   }
 
+  const effType: RateType = alloc?.rateType ?? settings.rateType
+  const effRate = alloc?.rate ?? settings.rate
+  const customOn = rateTxt.trim() !== ''
   const approve = () => {
     if (!sel) return
     const n = Number(boxes)
+    const newRate = Number(rateTxt)
+    if (customOn && !(Number.isFinite(newRate) && newRate >= 0)) return setErr('Enter a valid rate')
     const res = approveRequest(sel.id, n)
     if (!res.ok) return setErr(res.error ?? 'Could not allocate')
     setErr('')
+    if (customOn && res.id && (rateKind !== effType || newRate !== effRate)) {
+      const r2 = updateAllocation(res.id, { rateType: rateKind, rate: newRate })
+      if (!r2.ok) toast(`Allocated, but rate not changed: ${r2.error}`, 'error')
+    }
+    setRateTxt('')
     toast(`${num(n)} boxes allocated`)
     const after = useStore.getState().requests.find((r) => r.id === sel.id)
     setBoxes(String(Math.max(0, (after ? after.requestedBoxes - after.allocatedBoxes : 0))))
@@ -146,6 +162,25 @@ export default function RequestsPage() {
                 <Field label={sel.allocatedBoxes > 0 ? 'Boxes to add' : 'Boxes to allocate'} hint={`Up to ${num(Math.min(ask, avail))} now`}>
                   <Input type="number" min={1} value={boxes} onChange={(e) => setBoxes(e.target.value)} />
                 </Field>
+                <div style={{ marginTop: 12 }}>
+                  <div className="muted" style={{ fontSize: 13, marginBottom: 6 }}>
+                    {alloc ? 'Agreement rate' : 'Rate applied to this new agreement'}: <b>{rateLabel(effType, effRate)}</b>
+                    {!alloc && ' (store default from Settings)'}
+                  </div>
+                  <div className="form-grid">
+                    <Field label="Custom rate type (optional)">
+                      <Select value={rateKind} onChange={(e) => setRateKind(e.target.value as RateType)}>
+                        <option value="PER_CRATE">Per crate, flat</option>
+                        <option value="PER_DAY">Per box / day</option>
+                        <option value="PER_MONTH">Per box / month</option>
+                        <option value="PER_SEASON">Per box / season</option>
+                      </Select>
+                    </Field>
+                    <Field label="Custom rate (₹)" hint="Leave blank to keep the rate above">
+                      <Input type="number" min={0} step="0.01" value={rateTxt} placeholder={String(effRate)} onChange={(e) => setRateTxt(e.target.value)} />
+                    </Field>
+                  </div>
+                </div>
                 {sel.status === 'PENDING' && (
                   <div style={{ marginTop: 12 }}>
                     <Field label="Rejection reason (optional)"><Textarea value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
@@ -158,7 +193,7 @@ export default function RequestsPage() {
             {alloc && st && (
               <div className="rq-alloc">
                 <div className="row spread wrap">
-                  <div><b className="mono">{alloc.code}</b> <span className="muted">· allocation card</span></div>
+                  <div><b className="mono">{alloc.code}</b> <span className="muted">· {rateLabel(alloc.rateType, alloc.rate)}</span></div>
                   <StatusPill status={st.status} />
                 </div>
                 <div className="rq-alloc-nums">
