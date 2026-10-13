@@ -12,7 +12,8 @@ import { defaultLocations } from './types'
 import { autoPlace, derive, type Data, type Derived } from './calc'
 import { applyImport, type ImportMode, type ImportOptions, type ImportResult } from './importer'
 import type { ImportPreview } from './excel'
-import { buildSeed } from './seed'
+// import { buildSeed } from './seed' // sample data disabled for now
+import { buildEmpty } from './seed'
 import { addMonths, nowIso, rateLabel, today } from './format'
 
 const pad = (n: number, w: number) => String(n).padStart(w, '0')
@@ -130,7 +131,8 @@ export const useStore = create<AppState>()(
       const growerName = (id: string) => get().growers.find((g) => g.id === id)?.name ?? 'Grower'
 
       return {
-        ...buildSeed(),
+        // ...buildSeed(), // sample data disabled for now
+        ...buildEmpty(),
         session: null,
 
         login: (role, growerId) =>
@@ -141,7 +143,8 @@ export const useStore = create<AppState>()(
             },
           }),
         logout: () => set({ session: null }),
-        resetDemo: () => set({ ...buildSeed() }),
+        // resetDemo: () => set({ ...buildSeed() }),
+        resetDemo: () => set({ ...buildEmpty() }),
 
         registerGrower: (g, status = 'PENDING') => {
           if (!g.name.trim()) return fail('Name is required')
@@ -410,7 +413,7 @@ export const useStore = create<AppState>()(
       }
     },
     {
-      name: 'coldstore-poc-v1',
+      name: 'coldstore-poc-v2-empty',
       version: 2,
       migrate: (persisted, _version) => migrateState(persisted) as unknown as AppState,
     },

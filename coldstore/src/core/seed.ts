@@ -273,3 +273,14 @@ export function buildSeed(): Data {
   activities.sort((a, b) => b.timestamp.localeCompare(a.timestamp))
   return { growers, requests, allocations, boxIssues, receipts, lots, dispatches, payments, chambers, activities, notifications, settings }
 }
+
+/** Empty starting state: only the fixed store config (chambers + settings), no sample records. */
+export function buildEmpty(): Data {
+  const chambers: Chamber[] = ['C-01', 'C-02', 'C-03', 'C-04', 'C-05'].map((id, i) => ({
+    id, capacity: 20000, racks: 20, tempC: [0.5, 1.0, 0.5, 1.5, 1.0][i],
+  }))
+  return {
+    growers: [], requests: [], allocations: [], boxIssues: [], receipts: [], lots: [], dispatches: [], payments: [],
+    chambers, activities: [], notifications: [], settings: seedSettings(),
+  }
+}
